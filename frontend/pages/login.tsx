@@ -36,99 +36,99 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-presales-page-bg flex items-center justify-center">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-4">
-            <div className="w-12 h-12 bg-presales-dark-green rounded-lg flex items-center justify-center font-bold text-white text-xl">
-              PA
+            <img src="/logo.svg" alt="Presales" className="w-14 h-14 shadow-lg" />
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Presales</h1>
+              <p className="text-sm text-gray-500">Platform</p>
             </div>
-            <h1 className="text-3xl font-bold text-presales-dark-green">Presales</h1>
           </div>
-          <p className="text-presales-text-secondary">Opportunity & Artifact Management Platform</p>
+          <p className="text-gray-600 mt-2">Opportunity & Artifact Management</p>
         </div>
 
         {/* Card */}
-        <div className="card">
-          <h2 className="text-2xl font-bold text-presales-text mb-6">Sign In</h2>
+        <div className="bg-white rounded-xl shadow-lg border border-gray-200">
+          <div className="p-8">
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">Sign In</h2>
 
-          {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
-              <AlertCircle size={20} className="text-red-600 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-red-700">{error}</p>
-            </div>
-          )}
+            {error && (
+              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
+                <AlertCircle size={20} className="text-red-600 mt-0.5 flex-shrink-0" />
+                <p className="text-sm text-red-700">{error}</p>
+              </div>
+            )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-presales-text mb-1">
-                Email
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full border border-presales-border rounded-lg px-4 py-2 text-presales-text focus:outline-none focus:border-presales-dark-green"
-                required
-              />
-            </div>
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@company.com"
+                  className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-gray-900 bg-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-presales-dark-green focus:border-transparent transition"
+                  required
+                />
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium text-presales-text mb-1">
-                Password
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter password"
-                className="w-full border border-presales-border rounded-lg px-4 py-2 text-presales-text focus:outline-none focus:border-presales-dark-green"
-                required
-              />
-            </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-gray-900 bg-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-presales-dark-green focus:border-transparent transition"
+                  required
+                />
+              </div>
 
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-presales-dark-green text-white py-2 rounded-lg font-medium hover:bg-presales-medium-green transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? 'Signing in...' : 'Sign In'}
-            </button>
-          </form>
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full bg-presales-dark-green text-white py-2.5 rounded-lg font-semibold hover:bg-green-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+              >
+                {isLoading ? 'Signing in...' : 'Sign In'}
+              </button>
+            </form>
+          </div>
 
           {/* Demo Info */}
-          <div className="mt-6 p-4 bg-presales-light-green border border-presales-border rounded-lg">
-            <p className="text-sm text-presales-text font-medium mb-2">Demo Credentials:</p>
-            <div className="space-y-1 text-xs text-presales-text-secondary">
-              <p><strong>Email:</strong> priya.sharma@example.com</p>
-              <p><strong>Password:</strong> Demo@123</p>
-              <p className="mt-3 text-presales-dark-green font-medium">Try any demo user email with password Demo@123</p>
+          <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-t border-gray-200 p-6 rounded-b-xl">
+            <p className="text-sm font-semibold text-gray-900 mb-3">Demo Credentials</p>
+            <div className="space-y-2 text-sm text-gray-700">
+              <p><span className="font-medium">Email:</span> priya.sharma@example.com</p>
+              <p><span className="font-medium">Password:</span> Demo@123</p>
+              <p className="text-xs text-presales-dark-green font-medium mt-3">✓ Use any demo user email with password Demo@123</p>
             </div>
           </div>
         </div>
 
-        {/* Demo Users */}
-        <div className="mt-6 p-4 bg-white border border-presales-border rounded-lg">
-          <p className="text-sm font-medium text-presales-text mb-3">Available Demo Users:</p>
-          <div className="space-y-2 text-xs text-presales-text-secondary">
-            <div className="flex justify-between">
-              <span><strong>Priya Sharma</strong> - Solution Owner</span>
-              <code>priya.sharma@example.com</code>
-            </div>
-            <div className="flex justify-between">
-              <span><strong>Rahul Mehta</strong> - Solution Member</span>
-              <code>rahul.mehta@example.com</code>
-            </div>
-            <div className="flex justify-between">
-              <span><strong>Neha Joshi</strong> - Guest</span>
-              <code>neha.joshi@example.com</code>
-            </div>
-            <div className="flex justify-between">
-              <span><strong>Vikram Shah</strong> - Admin</span>
-              <code>vikram.shah@example.com</code>
-            </div>
+        {/* Demo Users Grid */}
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+            <p className="font-semibold text-gray-900 text-xs mb-2">Presales Solution Owner</p>
+            <p className="text-xs text-gray-600">priya.sharma</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+            <p className="font-semibold text-gray-900 text-xs mb-2">Presales Solution Member</p>
+            <p className="text-xs text-gray-600">amit.kulkarni</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+            <p className="font-semibold text-gray-900 text-xs mb-2">Artifact Repository Owner</p>
+            <p className="text-xs text-gray-600">rahul.mehta</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+            <p className="font-semibold text-gray-900 text-xs mb-2">Presales Administrator</p>
+            <p className="text-xs text-gray-600">vikram.shah</p>
           </div>
         </div>
       </div>

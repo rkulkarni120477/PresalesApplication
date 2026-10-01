@@ -45,7 +45,23 @@ export default function Dashboard() {
   };
 
   if (loading || !data) {
-    return <div className="flex items-center justify-center h-96">Loading...</div>;
+    return (
+      <div className="space-y-6">
+        {/* KPI Skeleton */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="card h-24 animate-pulse bg-gray-100"></div>
+          ))}
+        </div>
+        {/* Chart Skeleton */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {[...Array(2)].map((_, i) => (
+            <div key={i} className="card h-80 animate-pulse bg-gray-100"></div>
+          ))}
+        </div>
+        <div className="card h-64 animate-pulse bg-gray-100"></div>
+      </div>
+    );
   }
 
   // Prepare chart data

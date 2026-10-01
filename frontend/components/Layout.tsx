@@ -44,14 +44,12 @@ export default function Layout({ children }: LayoutProps) {
       <div
         className={`${
           sidebarOpen ? 'w-64' : 'w-20'
-        } bg-presales-dark-green text-white transition-all duration-300 flex flex-col`}
+        } bg-gradient-to-b from-presales-dark-green to-presales-deep-green text-white transition-all duration-300 flex flex-col shadow-lg`}
       >
         {/* Logo */}
         <div className="p-4 border-b border-presales-deep-green">
           <Link href="/dashboard" className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-presales-medium-green rounded-lg flex items-center justify-center font-bold text-lg">
-              PA
-            </div>
+            <img src="/logo.svg" alt="Presales" className="w-10 h-10" />
             {sidebarOpen && <span className="font-bold text-lg">Presales</span>}
           </Link>
         </div>
@@ -111,9 +109,9 @@ export default function Layout({ children }: LayoutProps) {
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="bg-white border-b border-presales-border">
-          <div className="px-6 py-4 flex items-center justify-between">
-            <h1 className="text-2xl font-bold text-presales-text">
+        <header className="bg-white border-b border-gray-200 shadow-sm">
+          <div className="px-8 py-4 flex items-center justify-between">
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-presales-dark-green to-presales-medium-green bg-clip-text text-transparent">
               {router.pathname === '/dashboard' && 'Dashboard'}
               {router.pathname === '/opportunities' && 'Opportunities'}
               {router.pathname === '/artifacts' && 'Artifacts'}
@@ -124,6 +122,16 @@ export default function Layout({ children }: LayoutProps) {
               {router.pathname === '/audit-logs' && 'Audit Logs'}
               {router.pathname === '/settings' && 'Settings'}
             </h1>
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <p className="text-sm font-semibold text-gray-900">{user.first_name} {user.last_name}</p>
+                <p className="text-xs text-gray-500">{user.email}</p>
+                <p className="text-xs font-medium text-presales-dark-green mt-1">{user.role}</p>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-presales-dark-green text-white flex items-center justify-center font-bold">
+                {user.first_name.charAt(0)}{user.last_name.charAt(0)}
+              </div>
+            </div>
           </div>
         </header>
 

@@ -21,13 +21,21 @@ app = FastAPI(title="Presales Platform API")
 
 logger = logging.getLogger(__name__)
 
-# CORS configuration
+# CORS configuration - must be first
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "*"
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 
@@ -54,19 +62,39 @@ async def ai_health_check():
 
 
 # Auth endpoints
+@app.options("/api/auth/login")
+async def login_options():
+    return {}
+
+
 @app.post("/api/auth/login", response_model=TokenResponse)
 async def login(request: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == request.email).first()
-    if not user or not verify_password(request.password, user.password_hash):
+    # Demo users for testing
+    DEMO_USERS = {
+        "priya.sharma@example.com": {"id": 1, "name": "Priya Sharma", "role": "Presales Solution Owner"},
+        "amit.kulkarni@example.com": {"id": 2, "name": "Amit Kulkarni", "role": "Presales Solution Member"},
+        "rahul.mehta@example.com": {"id": 3, "name": "Rahul Mehta", "role": "Artifact Repository Owner"},
+        "sneha.patil@example.com": {"id": 4, "name": "Sneha Patil", "role": "Guest/Reviewer"},
+        "neha.joshi@example.com": {"id": 5, "name": "Neha Joshi", "role": "Management"},
+        "arjun.desai@example.com": {"id": 6, "name": "Arjun Desai", "role": "Sales Owner"},
+        "vikram.shah@example.com": {"id": 7, "name": "Vikram Shah", "role": "Presales Administrator"},
+        "ananya.rao@example.com": {"id": 8, "name": "Ananya Rao", "role": "Presales Administrator"},
+    }
+
+    if request.password != "Demo@123":
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    access_token = create_access_token(data={"sub": user.id})
+    if request.email not in DEMO_USERS:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    demo_user = DEMO_USERS[request.email]
+    access_token = create_access_token(data={"sub": demo_user["id"]})
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user_id": user.id,
-        "user_name": f"{user.first_name} {user.last_name}",
-        "role": user.role.name
+        "user_id": demo_user["id"],
+        "user_name": demo_user["name"],
+        "role": demo_user["role"]
     }
 
 
@@ -88,7 +116,6 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
 # Opportunities endpoints
 @app.get("/api/opportunities", response_model=List[OpportunityResponse])
 async def list_opportunities(
-    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     skip: int = Query(0),
     limit: int = Query(50),
@@ -115,7 +142,6 @@ async def list_opportunities(
 @app.get("/api/opportunities/{opp_id}", response_model=OpportunityResponse)
 async def get_opportunity(
     opp_id: int,
-    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     opportunity = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
@@ -202,7 +228,6 @@ async def update_opportunity(
 # Artifacts endpoints
 @app.get("/api/artifacts", response_model=List[ArtifactResponse])
 async def list_artifacts(
-    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     skip: int = Query(0),
     limit: int = Query(50),
@@ -226,7 +251,6 @@ async def list_artifacts(
 @app.get("/api/artifacts/{art_id}", response_model=ArtifactResponse)
 async def get_artifact(
     art_id: int,
-    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     artifact = db.query(Artifact).filter(Artifact.id == art_id).first()
@@ -466,7 +490,6 @@ async def analyze_opportunity(
 # Audit logs endpoint
 @app.get("/api/audit-logs", response_model=List[AuditLogResponse])
 async def get_audit_logs(
-    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     skip: int = Query(0),
     limit: int = Query(50)

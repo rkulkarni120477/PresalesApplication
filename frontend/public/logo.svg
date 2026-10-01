@@ -1,0 +1,22 @@
+<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+  <!-- Gradient definition -->
+  <defs>
+    <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1dd1a1;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0984e3;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="24" cy="24" r="24" fill="url(#logoGradient)" opacity="0.1"/>
+
+  <!-- Main "A" shape -->
+  <g transform="translate(12, 8)">
+    <!-- Left diagonal -->
+    <polygon points="0,28 8,0 9,0 17,28" fill="url(#logoGradient)" stroke="url(#logoGradient)" stroke-width="1"/>
+
+    <!-- Right diagonal is part of the same shape -->
+    <!-- Horizontal bar -->
+    <rect x="3" y="16" width="14" height="2.5" fill="url(#logoGradient)"/>
+  </g>
+</svg>

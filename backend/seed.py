@@ -339,51 +339,55 @@ def create_roles_and_permissions(db: Session):
             "name": "Presales Solution Owner",
             "description": "Full access to opportunities and artifacts",
             "permissions": [
-                "view_all_opportunities",
-                "create_opportunity",
-                "edit_opportunity",
-                "archive_opportunity",
-                "view_all_artifacts",
-                "create_artifact",
-                "edit_artifact",
-                "archive_artifact",
-                "map_artifacts",
-                "manage_ownership",
-                "view_reports",
-                "view_audit_logs",
+                "view_all_opportunities", "create_opportunity", "edit_opportunity", "archive_opportunity",
+                "view_all_artifacts", "create_artifact", "edit_artifact", "archive_artifact",
+                "map_artifacts", "manage_ownership", "view_reports", "view_audit_logs"
             ]
         },
         {
             "name": "Presales Solution Member",
             "description": "Limited access based on assignment",
             "permissions": [
-                "view_assigned_opportunities",
-                "create_opportunity",
-                "view_artifacts",
-                "create_artifact",
-                "search_artifacts",
-                "view_reports",
+                "view_assigned_opportunities", "create_opportunity", "view_artifacts",
+                "create_artifact", "search_artifacts", "view_reports"
             ]
         },
         {
-            "name": "Guest",
-            "description": "Read-only access",
-            "permissions": [
-                "view_opportunities",
-                "view_artifacts",
-                "search",
-            ]
-        },
-        {
-            "name": "Administrator",
+            "name": "Presales Administrator",
             "description": "Full system access",
             "permissions": [
-                "manage_users",
-                "manage_roles",
-                "manage_all_opportunities",
-                "manage_all_artifacts",
-                "view_audit_logs",
-                "system_configuration",
+                "manage_users", "manage_roles", "manage_all_opportunities", "manage_all_artifacts",
+                "view_audit_logs", "system_configuration"
+            ]
+        },
+        {
+            "name": "Sales Owner",
+            "description": "Manage sales opportunities",
+            "permissions": [
+                "view_all_opportunities", "create_opportunity", "edit_opportunity",
+                "view_reports", "view_artifacts"
+            ]
+        },
+        {
+            "name": "Artifact Repository Owner",
+            "description": "Manage artifact repository",
+            "permissions": [
+                "view_all_artifacts", "create_artifact", "edit_artifact", "archive_artifact",
+                "manage_artifact_library", "view_reports"
+            ]
+        },
+        {
+            "name": "Management",
+            "description": "Management and reporting access",
+            "permissions": [
+                "view_all_opportunities", "view_all_artifacts", "view_reports", "view_audit_logs"
+            ]
+        },
+        {
+            "name": "Guest/Reviewer",
+            "description": "Read-only access",
+            "permissions": [
+                "view_opportunities", "view_artifacts", "search", "view_reports"
             ]
         }
     ]
@@ -396,8 +400,10 @@ def create_roles_and_permissions(db: Session):
             db.flush()
 
             for perm_name in role_data["permissions"]:
-                permission = Permission(name=perm_name, role_id=role.id)
-                db.add(permission)
+                existing_perm = db.query(Permission).filter(Permission.name == perm_name, Permission.role_id == role.id).first()
+                if not existing_perm:
+                    permission = Permission(name=perm_name, role_id=role.id)
+                    db.add(permission)
 
     db.commit()
 
@@ -406,13 +412,13 @@ def create_users(db: Session):
     """Create demo users"""
     users_data = [
         {"first_name": "Priya", "last_name": "Sharma", "email": "priya.sharma@example.com", "role_name": "Presales Solution Owner", "dept": "Sales"},
-        {"first_name": "Amit", "last_name": "Kulkarni", "email": "amit.kulkarni@example.com", "role_name": "Presales Solution Owner", "dept": "Sales"},
-        {"first_name": "Rahul", "last_name": "Mehta", "email": "rahul.mehta@example.com", "role_name": "Presales Solution Member", "dept": "Sales"},
-        {"first_name": "Sneha", "last_name": "Patil", "email": "sneha.patil@example.com", "role_name": "Presales Solution Member", "dept": "Sales"},
-        {"first_name": "Neha", "last_name": "Joshi", "email": "neha.joshi@example.com", "role_name": "Guest", "dept": "Operations"},
-        {"first_name": "Arjun", "last_name": "Desai", "email": "arjun.desai@example.com", "role_name": "Guest", "dept": "Operations"},
-        {"first_name": "Vikram", "last_name": "Shah", "email": "vikram.shah@example.com", "role_name": "Administrator", "dept": "IT"},
-        {"first_name": "Ananya", "last_name": "Rao", "email": "ananya.rao@example.com", "role_name": "Administrator", "dept": "IT"},
+        {"first_name": "Amit", "last_name": "Kulkarni", "email": "amit.kulkarni@example.com", "role_name": "Presales Solution Member", "dept": "Sales"},
+        {"first_name": "Rahul", "last_name": "Mehta", "email": "rahul.mehta@example.com", "role_name": "Artifact Repository Owner", "dept": "Sales"},
+        {"first_name": "Sneha", "last_name": "Patil", "email": "sneha.patil@example.com", "role_name": "Guest/Reviewer", "dept": "Sales"},
+        {"first_name": "Neha", "last_name": "Joshi", "email": "neha.joshi@example.com", "role_name": "Management", "dept": "Operations"},
+        {"first_name": "Arjun", "last_name": "Desai", "email": "arjun.desai@example.com", "role_name": "Sales Owner", "dept": "Operations"},
+        {"first_name": "Vikram", "last_name": "Shah", "email": "vikram.shah@example.com", "role_name": "Presales Administrator", "dept": "IT"},
+        {"first_name": "Ananya", "last_name": "Rao", "email": "ananya.rao@example.com", "role_name": "Presales Administrator", "dept": "IT"},
     ]
 
     for user_data in users_data:

@@ -1,10 +1,13 @@
 import os
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    model_config = ConfigDict(extra="ignore")
+
     # Database
-    database_url: str = "postgresql://presales:presales@localhost:5432/presales_db"
+    database_url: str = "sqlite:///./presales.db"
 
     # AWS
     aws_region: str = os.getenv("AWS_REGION", "ap-south-1")
@@ -19,9 +22,6 @@ class Settings(BaseSettings):
 
     # Demo
     demo_password: str = "Demo@123"
-
-    class Config:
-        env_file = ".env"
 
 
 settings = Settings()
