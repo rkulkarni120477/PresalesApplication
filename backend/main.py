@@ -134,28 +134,30 @@ async def list_opportunities(
     search: Optional[str] = None,
     user_id: Optional[int] = Query(None)
 ):
+    # Unauthenticated users cannot see any opportunities
+    if not current_user or not current_user.role_id:
+        return []
+
     query = db.query(Opportunity)
+    user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
+    role_name = user_role.name if user_role else None
 
-    # Role-based filtering if user is authenticated
-    if current_user and current_user.role_id:
-        user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
-        role_name = user_role.name if user_role else None
-
-        if role_name == "Presales Administrator":
-            # Can only see opportunities assigned to them by Sales Owner
-            query = query.filter(Opportunity.assigned_to_id == current_user.id)
-        elif role_name == "Presales Solution Owner":
-            # Can only see opportunities assigned to them by Presales Administrator
-            query = query.filter(Opportunity.assigned_to_id == current_user.id)
-        elif role_name == "Presales Solution Member":
-            # Can only see opportunities assigned to them by Presales Solution Owner
-            query = query.filter(Opportunity.assigned_to_id == current_user.id)
-        elif role_name == "Sales Owner":
-            # Can only see opportunities that have been assigned (not unassigned)
-            query = query.filter(Opportunity.assigned_to_id != None)
-        else:
-            # Other roles cannot see any opportunities
-            query = query.filter(Opportunity.id == None)  # Return empty result
+    # Role-based filtering
+    if role_name == "Presales Administrator":
+        # Can only see opportunities assigned to them by Sales Owner
+        query = query.filter(Opportunity.assigned_to_id == current_user.id)
+    elif role_name == "Presales Solution Owner":
+        # Can only see opportunities assigned to them by Presales Administrator
+        query = query.filter(Opportunity.assigned_to_id == current_user.id)
+    elif role_name == "Presales Solution Member":
+        # Can only see opportunities assigned to them by Presales Solution Owner
+        query = query.filter(Opportunity.assigned_to_id == current_user.id)
+    elif role_name == "Sales Owner":
+        # Can only see opportunities that have been assigned (not unassigned)
+        query = query.filter(Opportunity.assigned_to_id != None)
+    else:
+        # Other roles cannot see any opportunities
+        return []
 
     if stage:
         query = query.filter(Opportunity.stage == stage)
