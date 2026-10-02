@@ -46,8 +46,17 @@ class APIClient {
     if (filters?.stage) params.append('stage', filters.stage);
     if (filters?.industry) params.append('industry', filters.industry);
     if (filters?.search) params.append('search', filters.search);
+    if (filters?.user_id) params.append('user_id', String(filters.user_id));
 
     const response = await this.client.get(`/api/opportunities?${params}`);
+    return response.data;
+  }
+
+  async assignOpportunity(opportunityId: number, userId: number) {
+    const response = await this.client.post(
+      `/api/opportunities/${opportunityId}/assign`,
+      { assigned_to_user_id: userId }
+    );
     return response.data;
   }
 
@@ -84,6 +93,19 @@ class APIClient {
 
   async createArtifact(data: any) {
     const response = await this.client.post('/api/artifacts', data);
+    return response.data;
+  }
+
+  async createArtifactWithFile(formData: FormData) {
+    const response = await this.client.post('/api/artifacts', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  }
+
+  async searchArtifacts(query: string, limit: number = 5) {
+    const params = new URLSearchParams({ query, limit: String(limit) });
+    const response = await this.client.get(`/api/artifacts/search/vector?${params}`);
     return response.data;
   }
 

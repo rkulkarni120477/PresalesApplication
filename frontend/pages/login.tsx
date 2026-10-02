@@ -41,10 +41,10 @@ export default function LoginPage() {
         {/* Header */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-4">
-            <img src="/logo.svg" alt="Presales" className="w-14 h-14 shadow-lg" />
+            <img src="/logo.svg" alt="Academian" className="w-14 h-14 shadow-lg" />
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Presales</h1>
-              <p className="text-sm text-gray-500">Platform</p>
+              <h1 className="text-2xl font-bold text-gray-900">Academian</h1>
+              <p className="text-sm text-gray-600">Presales Application</p>
             </div>
           </div>
           <p className="text-gray-600 mt-2">Opportunity & Artifact Management</p>

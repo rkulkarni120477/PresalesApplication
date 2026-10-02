@@ -13,3 +13,8 @@ pydantic-core==2.14.1
 cryptography==41.0.7
 python-dotenv==1.0.0
 cors==1.0.1
+chromadb==0.4.13
+sentence-transformers==2.2.2
+pypdf==3.17.4
+python-docx==0.8.11
+langchain==0.1.4

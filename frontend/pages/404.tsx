@@ -1,40 +1,20 @@
-import { useRouter } from "next/router";
+import React from 'react';
+import Link from 'next/link';
 
 export default function NotFound() {
-  const router = useRouter();
-
   return (
-    <div style={{
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      minHeight: "100vh",
-      backgroundColor: "#F7F9F8",
-      color: "#1F2937",
-      fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif",
-    }}>
-      <h1 style={{ fontSize: "3rem", marginBottom: "1rem", color: "#0B5D3B" }}>
-        404
-      </h1>
-      <p style={{ fontSize: "1.25rem", marginBottom: "2rem", color: "#6B7280" }}>
-        Page not found
-      </p>
-      <button
-        onClick={() => router.push("/login")}
-        style={{
-          backgroundColor: "#0B5D3B",
-          color: "white",
-          padding: "0.75rem 1.5rem",
-          borderRadius: "0.375rem",
-          border: "none",
-          cursor: "pointer",
-          fontSize: "1rem",
-          fontWeight: "500",
-        }}
-      >
-        Go to Login
-      </button>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-presales-page-bg via-presales-light-green to-presales-page-bg">
+      <div className="text-center">
+        <h1 className="text-6xl font-bold text-presales-dark-green mb-4">404</h1>
+        <p className="text-2xl text-presales-text mb-8">Page Not Found</p>
+        <p className="text-presales-text-secondary mb-8">The page you're looking for doesn't exist.</p>
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 px-6 py-3 bg-presales-dark-green text-white rounded-lg font-medium hover:bg-presales-medium-green transition-all duration-200"
+        >
+          Go Home
+        </Link>
+      </div>
     </div>
   );
 }

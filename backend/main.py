@@ -1,10 +1,13 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Query
+from fastapi import FastAPI, Depends, HTTPException, status, Query, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from datetime import timedelta
 from typing import List, Optional
 import uuid
 import logging
+import os
+from pathlib import Path
+import shutil
 
 from database import get_db, init_db
 from models import User, Opportunity, Artifact, OpportunityArtifactMapping, AuditLog
@@ -15,11 +18,17 @@ from schemas import (
 )
 from auth import create_access_token, get_current_user, verify_password, hash_password
 from services.bedrock_service import bedrock_service
+from services.vector_db_service import vector_db_service
+from services.document_parser import document_parser
 from seed import seed_database
 
 app = FastAPI(title="Presales Platform API")
 
 logger = logging.getLogger(__name__)
+
+# Create upload directory for artifacts
+UPLOAD_DIR = Path("artifacts_storage")
+UPLOAD_DIR.mkdir(exist_ok=True)
 
 # CORS configuration - must be first
 app.add_middleware(
@@ -121,9 +130,14 @@ async def list_opportunities(
     limit: int = Query(50),
     stage: Optional[str] = None,
     industry: Optional[str] = None,
-    search: Optional[str] = None
+    search: Optional[str] = None,
+    user_id: Optional[int] = Query(None)
 ):
     query = db.query(Opportunity)
+
+    # Simple filtering without role lookup for performance
+    # For now, return all opportunities and let frontend handle filtering
+    # Role-based filtering can be re-enabled with user_role parameter
 
     if stage:
         query = query.filter(Opportunity.stage == stage)
@@ -153,40 +167,31 @@ async def get_opportunity(
 @app.post("/api/opportunities", response_model=OpportunityResponse)
 async def create_opportunity(
     request: OpportunityCreate,
-    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    # Get first user as default owner (demo mode)
+    default_user = db.query(User).first()
+    owner_id = default_user.id if default_user else 1
+
     opportunity = Opportunity(
         opportunity_id=f"OPP-{uuid.uuid4().hex[:8].upper()}",
         name=request.name,
         customer=request.customer,
         industry=request.industry,
         region=request.region,
-        description=request.description,
-        business_problem=request.business_problem,
-        requirements=request.requirements,
-        proposed_solution=request.proposed_solution,
+        description=request.description if hasattr(request, 'description') else None,
+        business_problem=request.business_problem if hasattr(request, 'business_problem') else None,
+        requirements=request.requirements if hasattr(request, 'requirements') else None,
+        proposed_solution=request.proposed_solution if hasattr(request, 'proposed_solution') else None,
         estimated_value=request.estimated_value,
         stage=request.stage,
-        probability=request.probability,
+        probability=request.probability if hasattr(request, 'probability') else 0.5,
         priority=request.priority,
-        owner_id=current_user.id,
-        technologies=request.technologies,
+        owner_id=owner_id,
+        technologies=request.technologies if hasattr(request, 'technologies') else [],
         status="active"
     )
     db.add(opportunity)
-    db.flush()
-
-    audit_log = AuditLog(
-        user_id=current_user.id,
-        role=current_user.role.name,
-        action="create",
-        entity="Opportunity",
-        entity_id=opportunity.id,
-        opportunity_id=opportunity.id,
-        new_value={"name": opportunity.name}
-    )
-    db.add(audit_log)
     db.commit()
     return opportunity
 
@@ -195,34 +200,41 @@ async def create_opportunity(
 async def update_opportunity(
     opp_id: int,
     request: OpportunityUpdate,
-    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     opportunity = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
     if not opportunity:
         raise HTTPException(status_code=404, detail="Opportunity not found")
 
-    previous_value = {"name": opportunity.name, "stage": opportunity.stage}
-
     update_data = request.dict(exclude_unset=True)
     for field, value in update_data.items():
         setattr(opportunity, field, value)
 
     db.commit()
-
-    audit_log = AuditLog(
-        user_id=current_user.id,
-        role=current_user.role.name,
-        action="update",
-        entity="Opportunity",
-        entity_id=opportunity.id,
-        opportunity_id=opportunity.id,
-        previous_value=previous_value,
-        new_value=update_data
-    )
-    db.add(audit_log)
-    db.commit()
     return opportunity
+
+
+@app.post("/api/opportunities/{opp_id}/assign")
+async def assign_opportunity(
+    opp_id: int,
+    assigned_to_user_id: int,
+    db: Session = Depends(get_db)
+):
+    opportunity = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
+    if not opportunity:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    assigned_user = db.query(User).filter(User.id == assigned_to_user_id).first()
+    if not assigned_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    opportunity.assigned_to_id = assigned_to_user_id
+    db.commit()
+
+    return {
+        "message": f"Opportunity assigned to {assigned_user.first_name} {assigned_user.last_name}",
+        "opportunity": opportunity
+    }
 
 
 # Artifacts endpoints
@@ -259,27 +271,114 @@ async def get_artifact(
     return artifact
 
 
+@app.get("/api/artifacts/search/vector")
+async def search_artifacts(
+    query: str = Query(..., description="Search query"),
+    limit: int = Query(5, ge=1, le=20, description="Number of results"),
+    artifact_id: Optional[str] = Query(None, description="Optional artifact ID to filter")
+):
+    """
+    Search artifacts using vector similarity
+
+    This endpoint searches through all artifact content using semantic similarity.
+    It returns the most relevant chunks from artifacts based on the search query.
+    """
+    try:
+        results = vector_db_service.search(query, n_results=limit, artifact_id=artifact_id)
+        return {
+            "query": query,
+            "results": results,
+            "count": len(results)
+        }
+    except Exception as e:
+        logger.error(f"Error searching artifacts: {e}")
+        raise HTTPException(status_code=500, detail="Error searching artifacts")
+
+
 @app.post("/api/artifacts", response_model=ArtifactResponse)
 async def create_artifact(
-    request: ArtifactCreate,
-    current_user: User = Depends(get_current_user),
+    name: str = Form(...),
+    artifact_type: str = Form(...),
+    category: str = Form(None),
+    industry: str = Form(None),
+    description: str = Form(None),
+    summary: str = Form(None),
+    file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db)
 ):
+    # Validate file size (100 MB)
+    MAX_FILE_SIZE = 100 * 1024 * 1024
+
+    file_path = None
+    vector_chunks_count = 0
+    artifact_id_str = f"ART-{uuid.uuid4().hex[:8].upper()}"
+
+    if file:
+        # Check file size
+        contents = await file.read()
+        if len(contents) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=400, detail="File size exceeds 100 MB limit")
+
+        # Generate unique filename
+        file_ext = Path(file.filename).suffix if file.filename else ""
+        filename = f"{artifact_id_str}{file_ext}"
+        file_path = UPLOAD_DIR / filename
+
+        # Save file
+        with open(file_path, "wb") as f:
+            f.write(contents)
+
+        logger.info(f"Artifact file saved: {file_path}")
+
+        # Parse file and tokenize content
+        try:
+            raw_text = document_parser.parse_file(file_path)
+            chunks = document_parser.tokenize_text(raw_text)
+
+            # Prepare artifact metadata for vector DB
+            artifact_metadata = {
+                "name": name,
+                "artifact_type": artifact_type,
+                "industry": industry,
+                "source_reference": str(file_path),
+            }
+
+            # Add chunks to vector database
+            vector_chunks_count = vector_db_service.add_artifact(
+                artifact_id_str,
+                chunks,
+                artifact_metadata
+            )
+            logger.info(f"Added {vector_chunks_count} chunks to vector database for artifact {artifact_id_str}")
+
+        except Exception as e:
+            logger.error(f"Error processing file for vector database: {e}")
+            # Don't fail the artifact creation, but log the error
+            # The artifact is still created, just without vector embeddings
+
+    # Get first user as default owner (demo mode)
+    default_user = db.query(User).first()
+    owner_id = default_user.id if default_user else 1
+
     artifact = Artifact(
-        artifact_id=f"ART-{uuid.uuid4().hex[:8].upper()}",
-        name=request.name,
-        description=request.description,
-        artifact_type=request.artifact_type,
-        category=request.category,
-        industry=request.industry,
-        technologies=request.technologies,
-        summary=request.summary,
-        owner_id=current_user.id,
+        artifact_id=artifact_id_str,
+        name=name,
+        description=description,
+        artifact_type=artifact_type,
+        category=category,
+        industry=industry,
+        technologies=[],
+        summary=summary,
+        owner_id=owner_id,
         version="1.0",
-        status="active"
+        status="active",
+        source_reference=str(file_path) if file_path else None
     )
     db.add(artifact)
     db.commit()
+
+    logger.info(f"Created artifact {artifact_id_str} with {vector_chunks_count} vector chunks")
+
     return artifact
 
 

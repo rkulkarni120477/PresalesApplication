@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { apiClient } from '@/lib/api';
-import { Plus, Search, Filter, Eye } from 'lucide-react';
+import { useAuthStore } from '@/lib/store';
+import { Plus, Search, Filter, Eye, CheckCircle } from 'lucide-react';
 
 interface Opportunity {
   id: number;
@@ -16,11 +17,14 @@ interface Opportunity {
 }
 
 export default function OpportunitiesPage() {
+  const { user } = useAuthStore();
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [stage, setStage] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     customer: '',
@@ -41,6 +45,7 @@ export default function OpportunitiesPage() {
       const filters = {
         search: search || undefined,
         stage: stage || undefined,
+        user_id: user?.id,
       };
       const data = await apiClient.getOpportunities(0, 100, filters);
       setOpportunities(data);
@@ -53,6 +58,9 @@ export default function OpportunitiesPage() {
 
   const handleCreateOpportunity = async (e: React.FormEvent) => {
     e.preventDefault();
+    setCreateError('');
+    setCreateLoading(true);
+
     try {
       await apiClient.createOpportunity({
         ...formData,
@@ -68,9 +76,13 @@ export default function OpportunitiesPage() {
         priority: 'Medium',
         estimated_value: '',
       });
-      loadOpportunities();
-    } catch (error) {
+      await loadOpportunities();
+    } catch (error: any) {
+      const errorMsg = error?.response?.data?.detail || error?.message || 'Failed to create opportunity';
+      setCreateError(errorMsg);
       console.error('Failed to create opportunity:', error);
+    } finally {
+      setCreateLoading(false);
     }
   };
 
@@ -88,8 +100,8 @@ export default function OpportunitiesPage() {
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
-              loadOpportunities();
             }}
+            onKeyUp={() => loadOpportunities()}
             className="flex-1 border border-presales-border rounded-lg px-4 py-2"
           />
         </div>
@@ -111,20 +123,29 @@ export default function OpportunitiesPage() {
           </select>
         </div>
 
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="bg-presales-dark-green text-white px-6 py-2 rounded-lg font-medium hover:bg-presales-medium-green transition-all duration-200 flex items-center gap-2"
-        >
-          <Plus size={20} />
-          Create Opportunity
-        </button>
+        {user?.role === 'Sales Owner' && (
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="bg-presales-dark-green text-white px-6 py-2 rounded-lg font-medium hover:bg-presales-medium-green transition-all duration-200 flex items-center gap-2"
+          >
+            <Plus size={20} />
+            Create Opportunity
+          </button>
+        )}
       </div>
 
       {/* Create Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="card w-full max-w-2xl">
+          <div className="card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <h3 className="text-2xl font-bold text-presales-text mb-6">Create Opportunity</h3>
+
+            {createError && (
+              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-700">{createError}</p>
+              </div>
+            )}
+
             <form onSubmit={handleCreateOpportunity} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <input
@@ -189,16 +210,21 @@ export default function OpportunitiesPage() {
               <div className="flex gap-4 justify-end mt-6">
                 <button
                   type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-6 py-2 border border-presales-border rounded-lg hover:bg-presales-page-bg transition-all duration-200"
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setCreateError('');
+                  }}
+                  disabled={createLoading}
+                  className="px-6 py-2 border border-presales-border rounded-lg hover:bg-presales-page-bg transition-all duration-200 disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2 bg-presales-dark-green text-white rounded-lg hover:bg-presales-medium-green transition-all duration-200"
+                  disabled={createLoading}
+                  className="px-6 py-2 bg-presales-dark-green text-white rounded-lg hover:bg-presales-medium-green transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Create
+                  {createLoading ? 'Creating...' : 'Create'}
                 </button>
               </div>
             </form>
@@ -217,7 +243,9 @@ export default function OpportunitiesPage() {
               <th className="text-left py-3 px-4 font-semibold text-presales-text">Industry</th>
               <th className="text-left py-3 px-4 font-semibold text-presales-text">Stage</th>
               <th className="text-left py-3 px-4 font-semibold text-presales-text">Value</th>
-              <th className="text-left py-3 px-4 font-semibold text-presales-text">Probability</th>
+              {user?.role === 'Presales Administrator' && (
+                <th className="text-left py-3 px-4 font-semibold text-presales-text">Status</th>
+              )}
               <th className="text-center py-3 px-4 font-semibold text-presales-text">Actions</th>
             </tr>
           </thead>
@@ -249,17 +277,41 @@ export default function OpportunitiesPage() {
                   <td className="py-3 px-4 text-presales-text">
                     {opp.estimated_value ? `$${(opp.estimated_value / 1000000).toFixed(1)}M` : '-'}
                   </td>
-                  <td className="py-3 px-4 text-presales-text">
-                    {opp.probability ? `${(opp.probability * 100).toFixed(0)}%` : '-'}
-                  </td>
+                  {user?.role === 'Presales Administrator' && (
+                    <td className="py-3 px-4">
+                      {opp.assigned_to_id ? (
+                        <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
+                          <CheckCircle size={14} />
+                          Assigned
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-sm font-medium">
+                          Pending
+                        </span>
+                      )}
+                    </td>
+                  )}
                   <td className="py-3 px-4 text-center">
-                    <Link
-                      href={`/opportunities/${opp.id}`}
-                      className="inline-flex items-center gap-2 px-3 py-1 rounded-lg text-presales-dark-green hover:bg-presales-light-green transition-all duration-200"
-                    >
-                      <Eye size={16} />
-                      <span className="text-sm">View</span>
-                    </Link>
+                    <div className="flex items-center justify-center gap-2">
+                      <Link
+                        href={`/opportunities/${opp.id}`}
+                        className="inline-flex items-center gap-2 px-3 py-1 rounded-lg text-presales-dark-green hover:bg-presales-light-green transition-all duration-200"
+                      >
+                        <Eye size={16} />
+                        <span className="text-sm">View</span>
+                      </Link>
+                      {user?.role === 'Presales Administrator' && !opp.assigned_to_id && (
+                        <button
+                          onClick={() => {
+                            // Open assignment modal - we'll add this functionality next
+                            console.log('Assign opportunity:', opp.id);
+                          }}
+                          className="inline-flex items-center gap-2 px-3 py-1 rounded-lg text-presales-dark-green hover:bg-presales-light-green transition-all duration-200"
+                        >
+                          <span className="text-sm">Assign</span>
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))

@@ -47,7 +47,7 @@ class User(Base):
     last_login = Column(DateTime)
 
     role = relationship("Role", back_populates="users")
-    opportunities = relationship("Opportunity", back_populates="owner")
+    opportunities = relationship("Opportunity", foreign_keys="Opportunity.owner_id", back_populates="owner")
     audit_logs = relationship("AuditLog", back_populates="user")
     artifacts = relationship("Artifact", back_populates="owner")
 
@@ -71,6 +71,7 @@ class Opportunity(Base):
     probability = Column(Float)
     priority = Column(String(50))
     owner_id = Column(Integer, ForeignKey("users.id"), index=True)
+    assigned_to_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     team = Column(String(255))
     target_close_date = Column(DateTime)
     status = Column(String(50), default="active")
@@ -83,7 +84,8 @@ class Opportunity(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    owner = relationship("User", back_populates="opportunities")
+    owner = relationship("User", foreign_keys=[owner_id], back_populates="opportunities")
+    assigned_to = relationship("User", foreign_keys=[assigned_to_id])
     artifacts = relationship("Artifact", secondary="opportunity_artifact_mappings", back_populates="opportunities")
     mappings = relationship("OpportunityArtifactMapping", back_populates="opportunity")
     audit_logs = relationship("AuditLog", foreign_keys="AuditLog.opportunity_id", back_populates="opportunity")

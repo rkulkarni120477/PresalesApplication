@@ -2,8 +2,8 @@ import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useAuthStore } from '@/lib/store';
-import { Menu, X, LogOut, Settings } from 'lucide-react';
-import { useState } from 'react';
+import { Menu, X, LogOut, Settings, User } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -13,11 +13,24 @@ export default function Layout({ children }: LayoutProps) {
   const router = useRouter();
   const { user, logout } = useAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const handleLogout = () => {
     logout();
     router.push('/login');
   };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: '📊' },
@@ -48,9 +61,14 @@ export default function Layout({ children }: LayoutProps) {
       >
         {/* Logo */}
         <div className="p-4 border-b border-presales-deep-green">
-          <Link href="/dashboard" className="flex items-center gap-3">
-            <img src="/logo.svg" alt="Presales" className="w-10 h-10" />
-            {sidebarOpen && <span className="font-bold text-lg">Presales</span>}
+          <Link href="/dashboard" className="flex items-center gap-2">
+            <img src="/logo.svg" alt="Academian" className="w-10 h-10" />
+            {sidebarOpen && (
+              <div>
+                <p className="font-bold text-sm">Academian</p>
+                <p className="text-xs font-light text-presales-light-green">Presales App</p>
+              </div>
+            )}
           </Link>
         </div>
 
@@ -122,15 +140,50 @@ export default function Layout({ children }: LayoutProps) {
               {router.pathname === '/audit-logs' && 'Audit Logs'}
               {router.pathname === '/settings' && 'Settings'}
             </h1>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 relative" ref={menuRef}>
               <div className="text-right">
                 <p className="text-sm font-semibold text-gray-900">{user.first_name} {user.last_name}</p>
                 <p className="text-xs text-gray-500">{user.email}</p>
                 <p className="text-xs font-medium text-presales-dark-green mt-1">{user.role}</p>
               </div>
-              <div className="w-10 h-10 rounded-full bg-presales-dark-green text-white flex items-center justify-center font-bold">
+              <button
+                onClick={() => setUserMenuOpen(!userMenuOpen)}
+                className="w-10 h-10 rounded-full bg-presales-dark-green text-white flex items-center justify-center font-bold hover:bg-green-700 transition-colors cursor-pointer"
+              >
                 {user.first_name.charAt(0)}{user.last_name.charAt(0)}
-              </div>
+              </button>
+
+              {/* User Menu Dropdown */}
+              {userMenuOpen && (
+                <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                  <div className="p-4 border-b border-gray-200">
+                    <p className="text-sm font-semibold text-gray-900">{user.first_name} {user.last_name}</p>
+                    <p className="text-xs text-gray-500">{user.email}</p>
+                  </div>
+                  <nav className="py-2">
+                    <button
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        router.push('/settings');
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                    >
+                      <User size={16} />
+                      Profile
+                    </button>
+                    <button
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        handleLogout();
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 border-t border-gray-200"
+                    >
+                      <LogOut size={16} />
+                      Logout
+                    </button>
+                  </nav>
+                </div>
+              )}
             </div>
           </div>
         </header>
