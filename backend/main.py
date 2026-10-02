@@ -214,9 +214,13 @@ async def get_opportunity(
 @app.post("/api/opportunities", response_model=OpportunityResponse)
 async def create_opportunity(
     request: OpportunityCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
+    # Require authentication
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
     # Only Sales Owner can create opportunities
     user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
     if not user_role or user_role.name != "Sales Owner":
