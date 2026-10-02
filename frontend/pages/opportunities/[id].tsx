@@ -349,7 +349,11 @@ export default function OpportunityDetailsPage() {
             <div className="text-right">
               <p className="text-sm text-presales-text-secondary mb-2">Estimated Value</p>
               <p className="text-3xl font-bold text-presales-dark-green">
-                {opportunity.estimated_value ? `${opportunity.currency} ${(opportunity.estimated_value / 1000000).toFixed(1)}M` : 'N/A'}
+                {opportunity.estimated_value ?
+                  (opportunity.estimated_value >= 1000000
+                    ? `$${(opportunity.estimated_value / 1000000).toFixed(1)}M`
+                    : `$${opportunity.estimated_value.toLocaleString()}`)
+                  : 'N/A'}
               </p>
             </div>
           </div>
