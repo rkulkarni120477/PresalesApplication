@@ -372,10 +372,7 @@ async def create_opportunity(
                                         shutil.copy(str(extracted_file), str(artifact_path))
 
                                         # Parse document
-                                        parsed_content = document_parser.parse_document(
-                                            str(artifact_path),
-                                            f"application/{extracted_extension.lstrip('.')}"
-                                        )
+                                        parsed_content = document_parser.parse_file(str(artifact_path))
 
                                         # Create artifact record
                                         artifact = Artifact(
@@ -392,16 +389,18 @@ async def create_opportunity(
 
                                         # Tokenize and add to vector DB
                                         if parsed_content:
-                                            vector_db_service.add_document(
-                                                doc_id=f"{artifact.id}",
-                                                content=parsed_content,
-                                                metadata={
-                                                    "artifact_id": artifact.id,
-                                                    "artifact_name": extracted_file.name,
-                                                    "opportunity_id": opportunity.id,
-                                                    "opportunity_name": opportunity.name,
-                                                    "source_zip": file.filename
-                                                }
+                                            chunks = document_parser.tokenize_text(parsed_content)
+                                            artifact_metadata = {
+                                                "artifact_id": artifact.id,
+                                                "artifact_name": extracted_file.name,
+                                                "opportunity_id": opportunity.id,
+                                                "opportunity_name": opportunity.name,
+                                                "source_zip": file.filename
+                                            }
+                                            vector_db_service.add_artifact(
+                                                artifact_id=f"{artifact.id}",
+                                                chunks=chunks,
+                                                artifact_metadata=artifact_metadata
                                             )
 
                                         # Map artifact to opportunity
@@ -429,7 +428,7 @@ async def create_opportunity(
                     f.write(contents)
 
                 # Parse document
-                parsed_content = document_parser.parse_document(str(file_path), file.content_type)
+                parsed_content = document_parser.parse_file(str(file_path))
 
                 # Create artifact record
                 artifact = Artifact(
@@ -446,15 +445,17 @@ async def create_opportunity(
 
                 # Tokenize and add to vector DB
                 if parsed_content:
-                    vector_db_service.add_document(
-                        doc_id=f"{artifact.id}",
-                        content=parsed_content,
-                        metadata={
-                            "artifact_id": artifact.id,
-                            "artifact_name": file.filename,
-                            "opportunity_id": opportunity.id,
-                            "opportunity_name": opportunity.name
-                        }
+                    chunks = document_parser.tokenize_text(parsed_content)
+                    artifact_metadata = {
+                        "artifact_id": artifact.id,
+                        "artifact_name": file.filename,
+                        "opportunity_id": opportunity.id,
+                        "opportunity_name": opportunity.name
+                    }
+                    vector_db_service.add_artifact(
+                        artifact_id=f"{artifact.id}",
+                        chunks=chunks,
+                        artifact_metadata=artifact_metadata
                     )
 
                 # Map artifact to opportunity
@@ -526,7 +527,7 @@ async def update_opportunity(
 
             # Parse document
             try:
-                parsed_content = document_parser.parse_document(str(file_path), file.content_type or "text/plain")
+                parsed_content = document_parser.parse_file(str(file_path))
                 logger.info(f"Document parsed successfully, content length: {len(parsed_content) if parsed_content else 0} chars")
             except Exception as parse_error:
                 logger.warning(f"Document parsing failed: {parse_error}, continuing without content")
@@ -552,15 +553,17 @@ async def update_opportunity(
             # Tokenize and add to vector DB
             if parsed_content:
                 try:
-                    vector_db_service.add_document(
-                        doc_id=f"{artifact_id_db}",
-                        content=parsed_content,
-                        metadata={
-                            "artifact_id": artifact_id_db,
-                            "artifact_name": file.filename,
-                            "opportunity_id": opportunity.id,
-                            "opportunity_name": opportunity.name
-                        }
+                    chunks = document_parser.tokenize_text(parsed_content)
+                    artifact_metadata = {
+                        "artifact_id": artifact_id_db,
+                        "artifact_name": file.filename,
+                        "opportunity_id": opportunity.id,
+                        "opportunity_name": opportunity.name
+                    }
+                    vector_db_service.add_artifact(
+                        artifact_id=f"{artifact_id_db}",
+                        chunks=chunks,
+                        artifact_metadata=artifact_metadata
                     )
                     logger.info(f"Document added to vector DB with ID: {artifact_id_db}")
                 except Exception as vector_error:
