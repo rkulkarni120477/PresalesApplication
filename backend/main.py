@@ -195,20 +195,22 @@ async def list_opportunities(
         )
     elif role_name == "Presales Solution Owner":
         # Can see opportunities assigned to them AND opportunities they assigned to others
+        # But not if they've already completed it (unless they need to see member_completed status)
         query = query.filter(
             or_(
                 Opportunity.assigned_to_id == current_user.id,
                 Opportunity.assigned_by_id == current_user.id
             )
-        )
+        ).filter(Opportunity.completion_status != "owner_completed")
     elif role_name == "Presales Solution Member":
         # Can see opportunities assigned to them OR where they are collaborators
+        # But not if they've already completed it
         query = query.filter(
             or_(
                 Opportunity.assigned_to_id == current_user.id,
                 Opportunity.collaborators.any(OpportunityCollaborator.user_id == current_user.id)
             )
-        )
+        ).filter(Opportunity.completion_status != "member_completed")
     elif role_name == "Sales Owner":
         # Sees the opportunities they created, assigned or not
         query = query.filter(Opportunity.owner_id == current_user.id)
@@ -703,6 +705,60 @@ async def add_collaborator(
 
     return {
         "message": f"Added {collaborator_user.first_name} {collaborator_user.last_name} as collaborator",
+        "opportunity": enrich_opportunity(opportunity)
+    }
+
+
+@app.post("/api/opportunities/{opp_id}/complete")
+async def complete_opportunity(
+    opp_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    opportunity = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
+    if not opportunity:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    # Get current user's role
+    current_user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
+    current_role_name = current_user_role.name if current_user_role else None
+
+    # Verify user has permission to complete this opportunity
+    if current_role_name == "Presales Solution Member":
+        # Can only complete if assigned to them
+        if opportunity.assigned_to_id != current_user.id:
+            raise HTTPException(status_code=403, detail="You can only complete opportunities assigned to you")
+        opportunity.completion_status = "member_completed"
+
+    elif current_role_name == "Presales Solution Owner":
+        # Can only complete if assigned to them
+        if opportunity.assigned_to_id != current_user.id:
+            raise HTTPException(status_code=403, detail="You can only complete opportunities assigned to you")
+        opportunity.completion_status = "owner_completed"
+
+    elif current_role_name == "Presales Administrator":
+        # Can only complete if they assigned it
+        if opportunity.assigned_by_id != current_user.id:
+            raise HTTPException(status_code=403, detail="You can only complete opportunities you assigned")
+        opportunity.completion_status = "admin_completed"
+
+    elif current_role_name == "Sales Owner":
+        # Can only complete if they created it
+        if opportunity.owner_id != current_user.id:
+            raise HTTPException(status_code=403, detail="You can only complete opportunities you created")
+        opportunity.completion_status = "completed"
+
+    else:
+        raise HTTPException(status_code=403, detail="You don't have permission to complete this opportunity")
+
+    opportunity.completed_by_id = current_user.id
+    opportunity.completed_at = datetime.utcnow()
+    db.commit()
+
+    logger.info(f"Opportunity {opp_id} marked as complete by {current_user.first_name} {current_user.last_name} with status: {opportunity.completion_status}")
+
+    return {
+        "message": "Opportunity marked as complete",
         "opportunity": enrich_opportunity(opportunity)
     }
 

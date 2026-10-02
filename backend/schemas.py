@@ -84,6 +84,9 @@ class OpportunityResponse(OpportunityBase):
     owner_id: int
     assigned_to_id: Optional[int] = None
     status: str
+    completion_status: str = "open"
+    completed_by_id: Optional[int] = None
+    completed_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     owner_name: Optional[str] = None

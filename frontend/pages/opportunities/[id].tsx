@@ -52,6 +52,7 @@ export default function OpportunityDetailsPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [completionLoading, setCompletionLoading] = useState(false);
   const [editFormData, setEditFormData] = useState({
     name: '',
     customer: '',
@@ -141,6 +142,22 @@ export default function OpportunityDetailsPage() {
     } catch (error) {
       console.error('Failed to archive opportunity:', error);
       setError('Failed to archive opportunity');
+    }
+  };
+
+  const handleCompleteAssignment = async () => {
+    if (!opportunity || !confirm('Are you sure you want to mark this assignment as complete?')) return;
+
+    setCompletionLoading(true);
+    try {
+      await apiClient.completeOpportunity(opportunity.id);
+      console.log('Opportunity marked as complete');
+      router.push('/opportunities');
+    } catch (error: any) {
+      console.error('Failed to complete opportunity:', error);
+      setError('Failed to complete opportunity: ' + (error?.response?.data?.detail || error?.message));
+    } finally {
+      setCompletionLoading(false);
     }
   };
 
@@ -288,7 +305,7 @@ export default function OpportunityDetailsPage() {
                   Add Presales Solution Member
                 </button>
               )}
-              {user?.role === 'Sales Owner' && (
+              {(user?.role === 'Sales Owner' || user?.role === 'Presales Solution Owner' || user?.role === 'Presales Solution Member') && (
                 <>
                   <button
                     onClick={() => setShowEditModal(true)}
@@ -304,13 +321,25 @@ export default function OpportunityDetailsPage() {
                     <Archive size={16} />
                     Archive
                   </button>
-                  <button
-                    onClick={handleDelete}
-                    className="inline-flex items-center gap-2 px-4 py-2 text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-all duration-200"
-                  >
-                    <Trash2 size={16} />
-                    Delete
-                  </button>
+                  {user?.role === 'Sales Owner' && (
+                    <button
+                      onClick={handleDelete}
+                      className="inline-flex items-center gap-2 px-4 py-2 text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-all duration-200"
+                    >
+                      <Trash2 size={16} />
+                      Delete
+                    </button>
+                  )}
+                  {(user?.role === 'Presales Solution Owner' || user?.role === 'Presales Solution Member') && (
+                    <button
+                      onClick={handleCompleteAssignment}
+                      disabled={completionLoading}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white border border-green-600 rounded-lg hover:bg-green-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Users size={16} />
+                      {completionLoading ? 'Completing...' : 'Complete Assignment'}
+                    </button>
+                  )}
                 </>
               )}
             </>

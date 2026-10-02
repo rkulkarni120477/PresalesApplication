@@ -101,6 +101,11 @@ class APIClient {
     return response.data;
   }
 
+  async completeOpportunity(opportunityId: number) {
+    const response = await this.client.post(`/api/opportunities/${opportunityId}/complete`, {});
+    return response.data;
+  }
+
   async getOpportunity(id: number) {
     const response = await this.client.get(`/api/opportunities/${id}`);
     return response.data;
