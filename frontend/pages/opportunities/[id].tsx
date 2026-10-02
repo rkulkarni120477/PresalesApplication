@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { apiClient } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
-import { ArrowLeft, Edit, Trash2 } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, Users } from 'lucide-react';
 
 interface Opportunity {
   id: number;
@@ -42,12 +42,49 @@ export default function OpportunityDetailsPage() {
   const [opportunity, setOpportunity] = useState<Opportunity | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [presalesAdmins, setPresalesAdmins] = useState<any[]>([]);
+  const [selectedAdminId, setSelectedAdminId] = useState<number | null>(null);
 
   useEffect(() => {
     if (id) {
       loadOpportunity();
     }
   }, [id]);
+
+  useEffect(() => {
+    if (showAssignModal) {
+      loadPresalesAdmins();
+    }
+  }, [showAssignModal]);
+
+  const loadPresalesAdmins = async () => {
+    try {
+      const users = await apiClient.getUsers();
+      const admins = users.filter((u: any) => u.role === 'Presales Administrator');
+      setPresalesAdmins(admins);
+    } catch (error) {
+      console.error('Failed to load Presales Administrators:', error);
+    }
+  };
+
+  const handleAssign = async () => {
+    if (!selectedAdminId || !opportunity) return;
+
+    setAssignLoading(true);
+    try {
+      await apiClient.assignOpportunity(opportunity.id, selectedAdminId);
+      setShowAssignModal(false);
+      setSelectedAdminId(null);
+      await loadOpportunity();
+    } catch (error) {
+      console.error('Failed to assign opportunity:', error);
+      setError('Failed to assign opportunity');
+    } finally {
+      setAssignLoading(false);
+    }
+  };
 
   const loadOpportunity = async () => {
     try {
@@ -96,6 +133,15 @@ export default function OpportunityDetailsPage() {
         <div className="flex items-center gap-2">
           {user?.role === 'Sales Owner' && (
             <>
+              {!opportunity?.assigned_to_id && (
+                <button
+                  onClick={() => setShowAssignModal(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-presales-dark-green text-white border border-presales-dark-green rounded-lg hover:bg-presales-medium-green transition-all duration-200"
+                >
+                  <Users size={16} />
+                  Assign to Admin
+                </button>
+              )}
               <button className="inline-flex items-center gap-2 px-4 py-2 text-presales-dark-green border border-presales-border rounded-lg hover:bg-presales-light-green transition-all duration-200">
                 <Edit size={16} />
                 Edit
@@ -248,6 +294,53 @@ export default function OpportunityDetailsPage() {
           </div>
         </div>
       </div>
+
+      {/* Assign Modal */}
+      {showAssignModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="card w-full max-w-md">
+            <h3 className="text-2xl font-bold text-presales-text mb-6">Assign to Presales Administrator</h3>
+
+            <div className="space-y-4">
+              <label className="block text-sm font-medium text-presales-text mb-2">
+                Select Administrator
+              </label>
+              <select
+                value={selectedAdminId || ''}
+                onChange={(e) => setSelectedAdminId(Number(e.target.value))}
+                className="w-full border border-presales-border rounded-lg px-4 py-2 text-presales-text"
+              >
+                <option value="">-- Choose an Administrator --</option>
+                {presalesAdmins.map((admin) => (
+                  <option key={admin.id} value={admin.id}>
+                    {admin.first_name} {admin.last_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex gap-4 justify-end mt-6">
+              <button
+                onClick={() => {
+                  setShowAssignModal(false);
+                  setSelectedAdminId(null);
+                }}
+                disabled={assignLoading}
+                className="px-6 py-2 border border-presales-border rounded-lg hover:bg-presales-page-bg transition-all duration-200 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAssign}
+                disabled={!selectedAdminId || assignLoading}
+                className="px-6 py-2 bg-presales-dark-green text-white rounded-lg hover:bg-presales-medium-green transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {assignLoading ? 'Assigning...' : 'Assign'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

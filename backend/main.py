@@ -126,6 +126,7 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
 @app.get("/api/opportunities", response_model=List[OpportunityResponse])
 async def list_opportunities(
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
     skip: int = Query(0),
     limit: int = Query(50),
     stage: Optional[str] = None,
@@ -135,9 +136,23 @@ async def list_opportunities(
 ):
     query = db.query(Opportunity)
 
-    # Simple filtering without role lookup for performance
-    # For now, return all opportunities and let frontend handle filtering
-    # Role-based filtering can be re-enabled with user_role parameter
+    # Role-based filtering
+    user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
+    role_name = user_role.name if user_role else None
+
+    # Presales Administrator can only see opportunities assigned to them by Sales Owner
+    if role_name == "Presales Administrator":
+        query = query.filter(Opportunity.assigned_to_id == current_user.id)
+    # Presales Solution Owner can only see opportunities assigned to them by Presales Administrator
+    elif role_name == "Presales Solution Owner":
+        query = query.filter(Opportunity.assigned_to_id == current_user.id)
+    # Presales Solution Member can only see opportunities assigned to them by Presales Solution Owner
+    elif role_name == "Presales Solution Member":
+        query = query.filter(Opportunity.assigned_to_id == current_user.id)
+    # Sales Owner can only see their own opportunities
+    elif role_name == "Sales Owner":
+        query = query.filter(Opportunity.owner_id == current_user.id)
+    # Other roles can see all opportunities
 
     if stage:
         query = query.filter(Opportunity.stage == stage)
@@ -156,11 +171,30 @@ async def list_opportunities(
 @app.get("/api/opportunities/{opp_id}", response_model=OpportunityResponse)
 async def get_opportunity(
     opp_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     opportunity = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
     if not opportunity:
         raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    # Check access based on role
+    user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
+    role_name = user_role.name if user_role else None
+
+    # Presales Administrator can only view opportunities assigned to them
+    if role_name == "Presales Administrator" and opportunity.assigned_to_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    # Presales Solution Owner can only view opportunities assigned to them
+    elif role_name == "Presales Solution Owner" and opportunity.assigned_to_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    # Presales Solution Member can only view opportunities assigned to them
+    elif role_name == "Presales Solution Member" and opportunity.assigned_to_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    # Sales Owner can only view their own opportunities
+    elif role_name == "Sales Owner" and opportunity.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
     return opportunity
 
 
@@ -218,6 +252,7 @@ async def update_opportunity(
 async def assign_opportunity(
     opp_id: int,
     assigned_to_user_id: int,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     opportunity = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
@@ -228,7 +263,32 @@ async def assign_opportunity(
     if not assigned_user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Get current user's role
+    current_user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
+    current_role_name = current_user_role.name if current_user_role else None
+
+    # Get assigned user's role
+    assigned_user_role = db.query(Role).filter(Role.id == assigned_user.role_id).first()
+    assigned_role_name = assigned_user_role.name if assigned_user_role else None
+
+    # Validate assignment hierarchy
+    if current_role_name == "Sales Owner":
+        # Sales Owner can assign to Presales Administrator
+        if assigned_role_name != "Presales Administrator":
+            raise HTTPException(status_code=400, detail="Sales Owner can only assign to Presales Administrator")
+    elif current_role_name == "Presales Administrator":
+        # Admin can assign to Presales Solution Owner
+        if assigned_role_name != "Presales Solution Owner":
+            raise HTTPException(status_code=400, detail="Presales Administrator can only assign to Presales Solution Owner")
+    elif current_role_name == "Presales Solution Owner":
+        # Solution Owner can assign to Presales Solution Member
+        if assigned_role_name != "Presales Solution Member":
+            raise HTTPException(status_code=400, detail="Presales Solution Owner can only assign to Presales Solution Member")
+    else:
+        raise HTTPException(status_code=403, detail="You don't have permission to assign opportunities")
+
     opportunity.assigned_to_id = assigned_to_user_id
+    opportunity.assigned_by_id = current_user.id
     db.commit()
 
     return {

@@ -72,6 +72,7 @@ class Opportunity(Base):
     priority = Column(String(50))
     owner_id = Column(Integer, ForeignKey("users.id"), index=True)
     assigned_to_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    assigned_by_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     team = Column(String(255))
     target_close_date = Column(DateTime)
     status = Column(String(50), default="active")

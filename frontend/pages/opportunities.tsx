@@ -14,6 +14,10 @@ interface Opportunity {
   estimated_value: number;
   probability: number;
   priority: string;
+  owner_id: number;
+  assigned_to_id?: number;
+  owner_name?: string;
+  assigned_to_name?: string;
 }
 
 export default function OpportunitiesPage() {
@@ -243,6 +247,7 @@ export default function OpportunitiesPage() {
               <th className="text-left py-3 px-4 font-semibold text-presales-text">Industry</th>
               <th className="text-left py-3 px-4 font-semibold text-presales-text">Stage</th>
               <th className="text-left py-3 px-4 font-semibold text-presales-text">Value</th>
+              <th className="text-left py-3 px-4 font-semibold text-presales-text">Current Owner</th>
               {user?.role === 'Presales Administrator' && (
                 <th className="text-left py-3 px-4 font-semibold text-presales-text">Status</th>
               )}
@@ -277,6 +282,11 @@ export default function OpportunitiesPage() {
                   <td className="py-3 px-4 text-presales-text">
                     {opp.estimated_value ? `$${(opp.estimated_value / 1000000).toFixed(1)}M` : '-'}
                   </td>
+                  <td className="py-3 px-4">
+                    <span className="inline-flex items-center px-3 py-1 bg-presales-light-green text-presales-dark-green rounded-full text-sm font-medium">
+                      {opp.assigned_to_name || opp.owner_name || 'Unassigned'}
+                    </span>
+                  </td>
                   {user?.role === 'Presales Administrator' && (
                     <td className="py-3 px-4">
                       {opp.assigned_to_id ? (
@@ -300,10 +310,10 @@ export default function OpportunitiesPage() {
                         <Eye size={16} />
                         <span className="text-sm">View</span>
                       </Link>
-                      {user?.role === 'Presales Administrator' && !opp.assigned_to_id && (
+                      {user?.role === 'Sales Owner' && !opp.assigned_to_id && (
                         <button
                           onClick={() => {
-                            // Open assignment modal - we'll add this functionality next
+                            // Open assignment modal
                             console.log('Assign opportunity:', opp.id);
                           }}
                           className="inline-flex items-center gap-2 px-3 py-1 rounded-lg text-presales-dark-green hover:bg-presales-light-green transition-all duration-200"
