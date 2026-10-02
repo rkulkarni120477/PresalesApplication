@@ -95,6 +95,10 @@ class Opportunity(Base):
     collaborators = relationship("OpportunityCollaborator", back_populates="opportunity")
     audit_logs = relationship("AuditLog", foreign_keys="AuditLog.opportunity_id", back_populates="opportunity")
 
+    __table_args__ = (
+        Index('ix_opportunity_visibility', 'assigned_to_id', 'assigned_by_id', 'owner_id', 'completion_status'),
+    )
+
 
 class Artifact(Base):
     __tablename__ = "artifacts"
