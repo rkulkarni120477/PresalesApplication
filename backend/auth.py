@@ -79,22 +79,31 @@ def get_current_user_optional(
     authorization: str = Header(None),
     db: Session = Depends(get_db)
 ) -> Optional[User]:
+    import sys
+    print(f"get_current_user_optional called. Authorization header: {authorization[:50] if authorization else 'None'}", file=sys.stderr)
+
     if not authorization:
+        print("No authorization header", file=sys.stderr)
         return None
 
     try:
         scheme, token = authorization.split()
         if scheme.lower() != "bearer":
+            print(f"Invalid scheme: {scheme}", file=sys.stderr)
             return None
-    except ValueError:
+    except ValueError as e:
+        print(f"Failed to parse auth header: {e}", file=sys.stderr)
         return None
 
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
         user_id: int = payload.get("sub")
         if user_id is None:
+            print("No 'sub' in token payload", file=sys.stderr)
             return None
-    except JWTError:
+        print(f"Token validated for user_id: {user_id}", file=sys.stderr)
+    except JWTError as e:
+        print(f"JWT validation failed: {e}", file=sys.stderr)
         return None
 
     # Try to find user in database
