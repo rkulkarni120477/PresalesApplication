@@ -1,0 +1,2 @@
+This is a new proposal document being uploaded via PUT.
+It should be properly stored and retrieved.

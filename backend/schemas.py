@@ -82,9 +82,12 @@ class OpportunityResponse(OpportunityBase):
     id: int
     opportunity_id: str
     owner_id: int
+    assigned_to_id: Optional[int] = None
     status: str
     created_at: datetime
     updated_at: datetime
+    owner_name: Optional[str] = None
+    assigned_to_name: Optional[str] = None
 
     class Config:
         from_attributes = True

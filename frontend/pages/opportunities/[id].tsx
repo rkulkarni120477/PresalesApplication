@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { apiClient } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
-import { ArrowLeft, Edit, Trash2, Users } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, Users, FileText, Download, Archive } from 'lucide-react';
 
 interface Opportunity {
   id: number;
@@ -42,10 +42,23 @@ export default function OpportunityDetailsPage() {
   const [opportunity, setOpportunity] = useState<Opportunity | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [artifacts, setArtifacts] = useState<any[]>([]);
+  const [artifactsLoading, setArtifactsLoading] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [assignLoading, setAssignLoading] = useState(false);
-  const [presalesAdmins, setPresalesAdmins] = useState<any[]>([]);
-  const [selectedAdminId, setSelectedAdminId] = useState<number | null>(null);
+  const [assignableUsers, setAssignableUsers] = useState<any[]>([]);
+  const [selectedAssigneeId, setSelectedAssigneeId] = useState<number | null>(null);
+  const [assignModalTitle, setAssignModalTitle] = useState('');
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    customer: '',
+    industry: '',
+    stage: '',
+    priority: '',
+  });
 
   useEffect(() => {
     if (id) {
@@ -55,28 +68,41 @@ export default function OpportunityDetailsPage() {
 
   useEffect(() => {
     if (showAssignModal) {
-      loadPresalesAdmins();
+      loadAssignableUsers();
     }
   }, [showAssignModal]);
 
-  const loadPresalesAdmins = async () => {
+  const loadAssignableUsers = async () => {
     try {
       const users = await apiClient.getUsers();
-      const admins = users.filter((u: any) => u.role?.name === 'Presales Administrator');
-      setPresalesAdmins(admins);
+
+      // Load users based on current user's role
+      if (user?.role === 'Presales Administrator') {
+        const solutionOwners = users.filter((u: any) => u.role?.name === 'Presales Solution Owner');
+        setAssignableUsers(solutionOwners);
+        setAssignModalTitle('Assign to Presales Solution Owner');
+      } else if (user?.role === 'Presales Solution Owner') {
+        const solutionMembers = users.filter((u: any) => u.role?.name === 'Presales Solution Member');
+        setAssignableUsers(solutionMembers);
+        setAssignModalTitle('Add Presales Solution Member');
+      } else if (user?.role === 'Sales Owner') {
+        const admins = users.filter((u: any) => u.role?.name === 'Presales Administrator');
+        setAssignableUsers(admins);
+        setAssignModalTitle('Assign to Presales Administrator');
+      }
     } catch (error) {
-      console.error('Failed to load Presales Administrators:', error);
+      console.error('Failed to load assignable users:', error);
     }
   };
 
   const handleAssign = async () => {
-    if (!selectedAdminId || !opportunity) return;
+    if (!selectedAssigneeId || !opportunity) return;
 
     setAssignLoading(true);
     try {
-      await apiClient.assignOpportunity(opportunity.id, selectedAdminId);
+      await apiClient.assignOpportunity(opportunity.id, selectedAssigneeId);
       setShowAssignModal(false);
-      setSelectedAdminId(null);
+      setSelectedAssigneeId(null);
       await loadOpportunity();
     } catch (error) {
       console.error('Failed to assign opportunity:', error);
@@ -98,17 +124,96 @@ export default function OpportunityDetailsPage() {
     }
   };
 
+  const handleArchive = async () => {
+    if (!opportunity || !confirm('Are you sure you want to archive this opportunity?')) return;
+
+    try {
+      await apiClient.updateOpportunity(opportunity.id, { status: 'archived' });
+      router.push('/opportunities');
+    } catch (error) {
+      console.error('Failed to archive opportunity:', error);
+      setError('Failed to archive opportunity');
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!opportunity) return;
+
+    setEditLoading(true);
+    try {
+      if (selectedFile) {
+        // If a file is selected, use multipart form data
+        console.log('Saving with file:', selectedFile.name, selectedFile.size);
+        const formData = new FormData();
+        formData.append('name', editFormData.name);
+        formData.append('customer', editFormData.customer);
+        formData.append('industry', editFormData.industry);
+        formData.append('stage', editFormData.stage);
+        formData.append('priority', editFormData.priority);
+        formData.append('file', selectedFile);
+
+        console.log('FormData prepared, sending to backend...');
+        const result = await apiClient.updateOpportunityWithFile(opportunity.id, formData);
+        console.log('Update successful:', result);
+      } else {
+        // No file, just update fields
+        console.log('Saving without file');
+        await apiClient.updateOpportunity(opportunity.id, editFormData);
+      }
+      setShowEditModal(false);
+      setSelectedFile(null);
+      console.log('Loading opportunity after save...');
+      await loadOpportunity();
+      console.log('Opportunity reloaded');
+    } catch (error: any) {
+      console.error('Failed to update opportunity:', error);
+      console.error('Error response:', error?.response?.data);
+      setError('Failed to update opportunity: ' + (error?.response?.data?.detail || error?.message));
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
   const loadOpportunity = async () => {
     try {
       setLoading(true);
       const data = await apiClient.getOpportunity(Number(id));
       setOpportunity(data);
+      setEditFormData({
+        name: data.name || '',
+        customer: data.customer || '',
+        industry: data.industry || '',
+        stage: data.stage || '',
+        priority: data.priority || '',
+      });
+      console.log('Opportunity loaded, loading artifacts...');
+      // Make sure to await artifacts loading
+      await loadArtifacts(data.id);
+      console.log('Artifacts loaded successfully');
     } catch (error: any) {
       const errorMsg = error?.response?.data?.detail || error?.message || 'Failed to load opportunity';
       setError(errorMsg);
       console.error('Failed to load opportunity:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadArtifacts = async (opportunityId: number) => {
+    try {
+      setArtifactsLoading(true);
+      console.log('Loading artifacts for opportunity:', opportunityId);
+      // Clear artifacts first to force a fresh load
+      setArtifacts([]);
+      const data = await apiClient.getOpportunityArtifacts(opportunityId);
+      console.log('Artifacts loaded:', data);
+      console.log('Number of artifacts:', data?.length || 0);
+      setArtifacts(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('Failed to load artifacts:', error);
+      setArtifacts([]);
+    } finally {
+      setArtifactsLoading(false);
     }
   };
 
@@ -143,28 +248,63 @@ export default function OpportunityDetailsPage() {
           Back to Opportunities
         </Link>
         <div className="flex items-center gap-2">
-          {user?.role === 'Sales Owner' && (
+          {(user?.role === 'Sales Owner' || user?.role === 'Presales Administrator' || user?.role === 'Presales Solution Owner') && (
             <>
-              {!opportunity?.assigned_to_id && (
+              {user?.role === 'Sales Owner' && !opportunity?.assigned_to_id && (
                 <button
                   onClick={() => setShowAssignModal(true)}
                   className="inline-flex items-center gap-2 px-4 py-2 bg-presales-dark-green text-white border border-presales-dark-green rounded-lg hover:bg-presales-medium-green transition-all duration-200"
+                  title="Assign this opportunity to a Presales Administrator"
                 >
                   <Users size={16} />
                   Assign to Admin
                 </button>
               )}
-              <button className="inline-flex items-center gap-2 px-4 py-2 text-presales-dark-green border border-presales-border rounded-lg hover:bg-presales-light-green transition-all duration-200">
-                <Edit size={16} />
-                Edit
-              </button>
-              <button
-                onClick={handleDelete}
-                className="inline-flex items-center gap-2 px-4 py-2 text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-all duration-200"
-              >
-                <Trash2 size={16} />
-                Delete
-              </button>
+              {user?.role === 'Presales Administrator' && !opportunity?.assigned_to_id && (
+                <button
+                  onClick={() => setShowAssignModal(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-presales-dark-green text-white border border-presales-dark-green rounded-lg hover:bg-presales-medium-green transition-all duration-200"
+                  title="Assign this opportunity to a Presales Solution Owner"
+                >
+                  <Users size={16} />
+                  Assign to Solution Owner
+                </button>
+              )}
+              {user?.role === 'Presales Solution Owner' && opportunity?.assigned_to_id === user?.id && (
+                <button
+                  onClick={() => setShowAssignModal(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-presales-dark-green text-white border border-presales-dark-green rounded-lg hover:bg-presales-medium-green transition-all duration-200"
+                  title="Add a Presales Solution Member to this opportunity"
+                >
+                  <Users size={16} />
+                  Add Presales Solution Member
+                </button>
+              )}
+              {user?.role === 'Sales Owner' && (
+                <>
+                  <button
+                    onClick={() => setShowEditModal(true)}
+                    className="inline-flex items-center gap-2 px-4 py-2 text-presales-dark-green border border-presales-border rounded-lg hover:bg-presales-light-green transition-all duration-200"
+                  >
+                    <Edit size={16} />
+                    Edit
+                  </button>
+                  <button
+                    onClick={handleArchive}
+                    className="inline-flex items-center gap-2 px-4 py-2 text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-all duration-200"
+                  >
+                    <Archive size={16} />
+                    Archive
+                  </button>
+                  <button
+                    onClick={handleDelete}
+                    className="inline-flex items-center gap-2 px-4 py-2 text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-all duration-200"
+                  >
+                    <Trash2 size={16} />
+                    Delete
+                  </button>
+                </>
+              )}
             </>
           )}
         </div>
@@ -310,25 +450,194 @@ export default function OpportunityDetailsPage() {
         </div>
       </div>
 
+      {/* Attachments Section */}
+      <div className="card">
+        <h2 className="text-xl font-bold text-presales-text mb-4">📎 Attachments</h2>
+        {artifactsLoading ? (
+          <p className="text-presales-text-secondary">Loading attachments...</p>
+        ) : artifacts && artifacts.length > 0 ? (
+          <div className="space-y-2">
+            {artifacts.map((artifact) => (
+              <div
+                key={artifact.id}
+                className="flex items-center justify-between p-3 border border-presales-border rounded-lg hover:bg-presales-page-bg transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <FileText size={20} className="text-presales-dark-green" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-presales-text">{artifact.name}</p>
+                    <p className="text-xs text-presales-text-secondary">
+                      {artifact.artifact_type} • {new Date(artifact.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    // Download the file if source_reference is available
+                    if (artifact.source_reference) {
+                      const link = document.createElement('a');
+                      link.href = artifact.source_reference;
+                      link.download = artifact.name;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    }
+                  }}
+                  className="inline-flex items-center gap-2 px-3 py-1 text-presales-dark-green hover:bg-presales-light-green rounded-lg transition-colors"
+                  title="Download"
+                >
+                  <Download size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-presales-text-secondary">No attachments uploaded</p>
+        )}
+      </div>
+
+      {/* Edit Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-2xl font-bold text-presales-text mb-6">Edit Opportunity</h3>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSaveEdit();
+              }}
+              className="space-y-4"
+            >
+              <div className="grid grid-cols-2 gap-4">
+                <input
+                  type="text"
+                  placeholder="Opportunity Name"
+                  value={editFormData.name}
+                  onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                  className="col-span-2 border border-presales-border rounded-lg px-4 py-2"
+                />
+                <input
+                  type="text"
+                  placeholder="Customer Name"
+                  value={editFormData.customer}
+                  onChange={(e) => setEditFormData({ ...editFormData, customer: e.target.value })}
+                  className="border border-presales-border rounded-lg px-4 py-2"
+                />
+                <input
+                  type="text"
+                  placeholder="Industry"
+                  value={editFormData.industry}
+                  onChange={(e) => setEditFormData({ ...editFormData, industry: e.target.value })}
+                  className="border border-presales-border rounded-lg px-4 py-2"
+                />
+                <select
+                  value={editFormData.stage}
+                  onChange={(e) => setEditFormData({ ...editFormData, stage: e.target.value })}
+                  className="border border-presales-border rounded-lg px-4 py-2"
+                >
+                  <option value="">Select Stage</option>
+                  <option value="Discovery">Discovery</option>
+                  <option value="Qualification">Qualification</option>
+                  <option value="Solutioning">Solutioning</option>
+                  <option value="Proposal">Proposal</option>
+                  <option value="Negotiation">Negotiation</option>
+                  <option value="Closed Won">Closed Won</option>
+                  <option value="Closed Lost">Closed Lost</option>
+                </select>
+                <select
+                  value={editFormData.priority}
+                  onChange={(e) => setEditFormData({ ...editFormData, priority: e.target.value })}
+                  className="border border-presales-border rounded-lg px-4 py-2"
+                >
+                  <option value="">Select Priority</option>
+                  <option value="Low">Low</option>
+                  <option value="Medium">Medium</option>
+                  <option value="High">High</option>
+                  <option value="Critical">Critical</option>
+                </select>
+              </div>
+
+              <div className="mt-6 p-4 border-2 border-dashed border-presales-border rounded-lg">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <FileText size={20} className="text-presales-dark-green" />
+                  <span className="text-sm font-medium text-presales-text">
+                    {selectedFile ? selectedFile.name : 'Upload Additional Attachment (Optional)'}
+                  </span>
+                  <input
+                    type="file"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file && file.size <= 100 * 1024 * 1024) {
+                        setSelectedFile(file);
+                      } else if (file) {
+                        alert('File size must be less than 100 MB');
+                      }
+                    }}
+                    className="hidden"
+                    accept=".pdf,.docx,.txt,.csv,.doc,.zip"
+                  />
+                </label>
+                {selectedFile && (
+                  <div className="mt-2 flex items-center justify-between">
+                    <span className="text-xs text-presales-text-secondary">
+                      {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedFile(null)}
+                      className="text-xs text-red-600 hover:underline"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-4 justify-end mt-6">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setSelectedFile(null);
+                  }}
+                  disabled={editLoading}
+                  className="px-6 py-2 border border-presales-border rounded-lg hover:bg-presales-page-bg transition-all duration-200 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editLoading}
+                  className="px-6 py-2 bg-presales-dark-green text-white rounded-lg hover:bg-presales-medium-green transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {editLoading ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Assign Modal */}
       {showAssignModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="card w-full max-w-md">
-            <h3 className="text-2xl font-bold text-presales-text mb-6">Assign to Presales Administrator</h3>
+            <h3 className="text-2xl font-bold text-presales-text mb-6">{assignModalTitle}</h3>
 
             <div className="space-y-4">
               <label className="block text-sm font-medium text-presales-text mb-2">
-                Select Administrator
+                Select User
               </label>
               <select
-                value={selectedAdminId || ''}
-                onChange={(e) => setSelectedAdminId(Number(e.target.value))}
+                value={selectedAssigneeId || ''}
+                onChange={(e) => setSelectedAssigneeId(Number(e.target.value))}
                 className="w-full border border-presales-border rounded-lg px-4 py-2 text-presales-text"
               >
-                <option value="">-- Choose an Administrator --</option>
-                {presalesAdmins.map((admin) => (
-                  <option key={admin.id} value={admin.id}>
-                    {admin.first_name} {admin.last_name}
+                <option value="">-- Choose a User --</option>
+                {assignableUsers.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.first_name} {user.last_name}
                   </option>
                 ))}
               </select>
@@ -338,7 +647,7 @@ export default function OpportunityDetailsPage() {
               <button
                 onClick={() => {
                   setShowAssignModal(false);
-                  setSelectedAdminId(null);
+                  setSelectedAssigneeId(null);
                 }}
                 disabled={assignLoading}
                 className="px-6 py-2 border border-presales-border rounded-lg hover:bg-presales-page-bg transition-all duration-200 disabled:opacity-50"
@@ -347,7 +656,7 @@ export default function OpportunityDetailsPage() {
               </button>
               <button
                 onClick={handleAssign}
-                disabled={!selectedAdminId || assignLoading}
+                disabled={!selectedAssigneeId || assignLoading}
                 className="px-6 py-2 bg-presales-dark-green text-white rounded-lg hover:bg-presales-medium-green transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {assignLoading ? 'Assigning...' : 'Assign'}

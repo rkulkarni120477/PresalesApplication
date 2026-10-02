@@ -1,0 +1,3 @@
+This is a file being uploaded during edit.
+It should be parsed and stored as an artifact.
+This is a test to verify the fix works.

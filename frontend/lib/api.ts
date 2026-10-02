@@ -13,6 +13,15 @@ class APIClient {
       },
     });
 
+    // Override Content-Type for form data requests
+    this.client.interceptors.request.use((config) => {
+      // If sending FormData, let axios set the Content-Type with boundary
+      if (config.data instanceof FormData) {
+        delete config.headers['Content-Type'];
+      }
+      return config;
+    });
+
     // Add token to all requests
     this.client.interceptors.request.use((config) => {
       const token = localStorage.getItem('token');
@@ -105,6 +114,12 @@ class APIClient {
 
   async updateOpportunity(id: number, data: any) {
     const response = await this.client.put(`/api/opportunities/${id}`, data);
+    return response.data;
+  }
+
+  async updateOpportunityWithFile(id: number, formData: FormData) {
+    // Don't set Content-Type header - axios will set it automatically with correct boundary
+    const response = await this.client.put(`/api/opportunities/${id}`, formData);
     return response.data;
   }
 

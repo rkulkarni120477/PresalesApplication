@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Query, UploadFile, File, Form, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from datetime import timedelta
 from typing import List, Optional
 import uuid
@@ -124,6 +125,45 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
     return current_user
 
 
+# Helper function to enrich opportunity with user names
+def enrich_opportunity(opp: Opportunity) -> dict:
+    """Add owner_name and assigned_to_name to opportunity response"""
+    opp_dict = {
+        'id': opp.id,
+        'opportunity_id': opp.opportunity_id,
+        'name': opp.name,
+        'customer': opp.customer,
+        'industry': opp.industry,
+        'region': opp.region,
+        'description': opp.description,
+        'business_problem': opp.business_problem,
+        'requirements': opp.requirements,
+        'proposed_solution': opp.proposed_solution,
+        'estimated_value': opp.estimated_value,
+        'stage': opp.stage,
+        'probability': opp.probability,
+        'priority': opp.priority,
+        'owner_id': opp.owner_id,
+        'assigned_to_id': opp.assigned_to_id,
+        'status': opp.status,
+        'created_at': opp.created_at,
+        'updated_at': opp.updated_at,
+        'technologies': opp.technologies,
+        'owner_name': None,
+        'assigned_to_name': None,
+    }
+
+    # Add owner name
+    if opp.owner:
+        opp_dict['owner_name'] = f"{opp.owner.first_name} {opp.owner.last_name}".strip()
+
+    # Add assigned_to name
+    if opp.assigned_to:
+        opp_dict['assigned_to_name'] = f"{opp.assigned_to.first_name} {opp.assigned_to.last_name}".strip()
+
+    return opp_dict
+
+
 # Opportunities endpoints
 @app.get("/api/opportunities", response_model=List[OpportunityResponse])
 async def list_opportunities(
@@ -146,13 +186,23 @@ async def list_opportunities(
 
     # Role-based filtering
     if role_name == "Presales Administrator":
-        # Can only see opportunities assigned to them by Sales Owner
-        query = query.filter(Opportunity.assigned_to_id == current_user.id)
+        # Can see opportunities assigned to them AND opportunities they assigned to others
+        query = query.filter(
+            or_(
+                Opportunity.assigned_to_id == current_user.id,
+                Opportunity.assigned_by_id == current_user.id
+            )
+        )
     elif role_name == "Presales Solution Owner":
-        # Can only see opportunities assigned to them by Presales Administrator
-        query = query.filter(Opportunity.assigned_to_id == current_user.id)
+        # Can see opportunities assigned to them AND opportunities they assigned to others
+        query = query.filter(
+            or_(
+                Opportunity.assigned_to_id == current_user.id,
+                Opportunity.assigned_by_id == current_user.id
+            )
+        )
     elif role_name == "Presales Solution Member":
-        # Can only see opportunities assigned to them by Presales Solution Owner
+        # Can only see opportunities assigned to them
         query = query.filter(Opportunity.assigned_to_id == current_user.id)
     elif role_name == "Sales Owner":
         # Sees the opportunities they created, assigned or not
@@ -161,18 +211,24 @@ async def list_opportunities(
         # Other roles cannot see any opportunities
         return []
 
-    if stage:
-        query = query.filter(Opportunity.stage == stage)
-    if industry:
-        query = query.filter(Opportunity.industry == industry)
+    # Filter out archived opportunities unless searching
     if search:
+        # When searching, include archived opportunities
         query = query.filter(
             (Opportunity.name.ilike(f"%{search}%")) |
             (Opportunity.customer.ilike(f"%{search}%"))
         )
+    else:
+        # When not searching, exclude archived opportunities
+        query = query.filter(Opportunity.status != 'archived')
+
+    if stage:
+        query = query.filter(Opportunity.stage == stage)
+    if industry:
+        query = query.filter(Opportunity.industry == industry)
 
     opportunities = query.offset(skip).limit(limit).all()
-    return opportunities
+    return [enrich_opportunity(opp) for opp in opportunities]
 
 
 @app.get("/api/opportunities/{opp_id}", response_model=OpportunityResponse)
@@ -191,12 +247,12 @@ async def get_opportunity(
         role_name = user_role.name if user_role else None
 
         if role_name == "Presales Administrator":
-            # Can only view opportunities assigned to them
-            if opportunity.assigned_to_id != current_user.id:
+            # Can view opportunities assigned to them OR opportunities they assigned to others
+            if opportunity.assigned_to_id != current_user.id and opportunity.assigned_by_id != current_user.id:
                 raise HTTPException(status_code=403, detail="Access denied")
         elif role_name == "Presales Solution Owner":
-            # Can only view opportunities assigned to them
-            if opportunity.assigned_to_id != current_user.id:
+            # Can view opportunities assigned to them OR opportunities they assigned to others
+            if opportunity.assigned_to_id != current_user.id and opportunity.assigned_by_id != current_user.id:
                 raise HTTPException(status_code=403, detail="Access denied")
         elif role_name == "Presales Solution Member":
             # Can only view opportunities assigned to them
@@ -210,7 +266,7 @@ async def get_opportunity(
             # Other roles cannot view any opportunities
             raise HTTPException(status_code=403, detail="Access denied")
 
-    return opportunity
+    return enrich_opportunity(opportunity)
 
 
 @app.post("/api/opportunities", response_model=OpportunityResponse)
@@ -317,11 +373,13 @@ async def create_opportunity(
 
                                         # Create artifact record
                                         artifact = Artifact(
+                                            artifact_id=artifact_id,
                                             name=extracted_file.name,
                                             artifact_type="document",
                                             owner_id=current_user.id,
                                             source_reference=str(artifact_path),
-                                            description=f"Artifact from {file.filename} for opportunity {opportunity.name}"
+                                            description=f"Artifact from {file.filename} for opportunity {opportunity.name}",
+                                            version="1.0"
                                         )
                                         db.add(artifact)
                                         db.commit()
@@ -369,11 +427,13 @@ async def create_opportunity(
 
                 # Create artifact record
                 artifact = Artifact(
+                    artifact_id=artifact_id,
                     name=file.filename,
                     artifact_type="document",
                     owner_id=current_user.id,
                     source_reference=str(file_path),
-                    description=f"Artifact for opportunity {opportunity.name}"
+                    description=f"Artifact for opportunity {opportunity.name}",
+                    version="1.0"
                 )
                 db.add(artifact)
                 db.commit()
@@ -404,25 +464,128 @@ async def create_opportunity(
             # Don't fail opportunity creation if file processing fails
             pass
 
-    return opportunity
+    return enrich_opportunity(opportunity)
 
 
 @app.put("/api/opportunities/{opp_id}", response_model=OpportunityResponse)
 async def update_opportunity(
     opp_id: int,
-    request: OpportunityUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    name: Optional[str] = Form(default=None),
+    customer: Optional[str] = Form(default=None),
+    industry: Optional[str] = Form(default=None),
+    stage: Optional[str] = Form(default=None),
+    priority: Optional[str] = Form(default=None),
+    file: Optional[UploadFile] = File(default=None),
 ):
     opportunity = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
     if not opportunity:
         raise HTTPException(status_code=404, detail="Opportunity not found")
 
-    update_data = request.dict(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(opportunity, field, value)
+    logger.info(f"Updating opportunity {opp_id}: name={name}, customer={customer}, stage={stage}, file={file.filename if file else None}")
+
+    # Update fields if provided (not None and not empty after stripping)
+    if name is not None:
+        opportunity.name = name
+    if customer is not None:
+        opportunity.customer = customer
+    if industry is not None:
+        opportunity.industry = industry
+    if stage is not None:
+        opportunity.stage = stage
+    if priority is not None:
+        opportunity.priority = priority
 
     db.commit()
-    return opportunity
+    db.refresh(opportunity)  # Refresh to get updated values
+    logger.info(f"Opportunity {opp_id} updated successfully")
+
+    # Handle file upload if provided
+    logger.info(f"File parameter in PUT request: {file is not None}")
+    if file is not None:
+        try:
+            logger.info(f"Processing file upload: {file.filename}")
+            file_extension = Path(file.filename).suffix.lower()
+            artifact_id_str = f"ART-{uuid.uuid4().hex[:8].upper()}"
+            file_path = UPLOAD_DIR / f"{artifact_id_str}{file_extension}"
+
+            # Save file
+            contents = await file.read()
+            logger.info(f"File read successfully: {len(contents)} bytes from {file.filename}")
+
+            with open(file_path, 'wb') as f:
+                f.write(contents)
+            logger.info(f"File saved to disk: {file_path}")
+
+            # Parse document
+            try:
+                parsed_content = document_parser.parse_document(str(file_path), file.content_type or "text/plain")
+                logger.info(f"Document parsed successfully, content length: {len(parsed_content) if parsed_content else 0} chars")
+            except Exception as parse_error:
+                logger.warning(f"Document parsing failed: {parse_error}, continuing without content")
+                parsed_content = None
+
+            # Create artifact record
+            artifact_id_value = f"ART-{uuid.uuid4().hex[:8].upper()}"
+            artifact = Artifact(
+                artifact_id=artifact_id_value,
+                name=file.filename,
+                artifact_type="document",
+                owner_id=opportunity.owner_id,
+                source_reference=str(file_path),
+                description=f"Artifact for opportunity {opportunity.name}",
+                version="1.0"
+            )
+            db.add(artifact)
+            db.flush()  # Flush to ensure artifact gets an ID
+            artifact_id_db = artifact.id
+            db.commit()
+            logger.info(f"Artifact created successfully with database ID: {artifact_id_db}")
+
+            # Tokenize and add to vector DB
+            if parsed_content:
+                try:
+                    vector_db_service.add_document(
+                        doc_id=f"{artifact_id_db}",
+                        content=parsed_content,
+                        metadata={
+                            "artifact_id": artifact_id_db,
+                            "artifact_name": file.filename,
+                            "opportunity_id": opportunity.id,
+                            "opportunity_name": opportunity.name
+                        }
+                    )
+                    logger.info(f"Document added to vector DB with ID: {artifact_id_db}")
+                except Exception as vector_error:
+                    logger.warning(f"Vector DB add failed (continuing): {vector_error}")
+
+            # Map artifact to opportunity
+            mapping = OpportunityArtifactMapping(
+                opportunity_id=opportunity.id,
+                artifact_id=artifact_id_db
+            )
+            db.add(mapping)
+            db.flush()
+            db.commit()
+            logger.info(f"Artifact {artifact_id_db} mapped to opportunity {opportunity.id}")
+
+            # Verify mapping was created
+            verify_mapping = db.query(OpportunityArtifactMapping).filter(
+                OpportunityArtifactMapping.opportunity_id == opportunity.id,
+                OpportunityArtifactMapping.artifact_id == artifact_id_db
+            ).first()
+            logger.info(f"Mapping verification: {'SUCCESS' if verify_mapping else 'FAILED'}")
+
+        except Exception as e:
+            logger.error(f"Error processing file upload: {e}", exc_info=True)
+            # Don't fail the update if file processing fails
+            pass
+
+    # Refresh opportunity from database to ensure latest data
+    opportunity = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
+    logger.info(f"Update opportunity endpoint completed for ID: {opp_id}")
+    return enrich_opportunity(opportunity)
 
 
 @app.post("/api/opportunities/{opp_id}/assign")
@@ -470,7 +633,7 @@ async def assign_opportunity(
 
     return {
         "message": f"Opportunity assigned to {assigned_user.first_name} {assigned_user.last_name}",
-        "opportunity": opportunity
+        "opportunity": enrich_opportunity(opportunity)
     }
 
 
@@ -660,7 +823,22 @@ async def get_opportunity_artifacts(
     opportunity = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
     if not opportunity:
         raise HTTPException(status_code=404, detail="Opportunity not found")
-    return opportunity.artifacts
+
+    # Ensure we're getting fresh data by expiring the session cache
+    db.expire_all()
+
+    # Query artifacts through the mappings to ensure we get all artifacts
+    artifacts = db.query(Artifact).join(
+        OpportunityArtifactMapping,
+        Artifact.id == OpportunityArtifactMapping.artifact_id
+    ).filter(
+        OpportunityArtifactMapping.opportunity_id == opp_id
+    ).order_by(Artifact.created_at.desc()).all()
+
+    logger.info(f"Found {len(artifacts)} artifacts for opportunity {opp_id}")
+    for artifact in artifacts:
+        logger.info(f"  - Artifact {artifact.id}: {artifact.name}")
+    return artifacts
 
 
 @app.post("/api/opportunities/{opp_id}/artifacts/{art_id}", response_model=MappingResponse)
