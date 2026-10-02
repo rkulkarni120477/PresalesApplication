@@ -141,19 +141,21 @@ async def list_opportunities(
         user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
         role_name = user_role.name if user_role else None
 
-        # Presales Administrator can only see opportunities assigned to them by Sales Owner
         if role_name == "Presales Administrator":
+            # Can only see opportunities assigned to them by Sales Owner
             query = query.filter(Opportunity.assigned_to_id == current_user.id)
-        # Presales Solution Owner can only see opportunities assigned to them by Presales Administrator
         elif role_name == "Presales Solution Owner":
+            # Can only see opportunities assigned to them by Presales Administrator
             query = query.filter(Opportunity.assigned_to_id == current_user.id)
-        # Presales Solution Member can only see opportunities assigned to them by Presales Solution Owner
         elif role_name == "Presales Solution Member":
+            # Can only see opportunities assigned to them by Presales Solution Owner
             query = query.filter(Opportunity.assigned_to_id == current_user.id)
-        # Sales Owner can only see their own opportunities
         elif role_name == "Sales Owner":
-            query = query.filter(Opportunity.owner_id == current_user.id)
-        # Other roles can see all opportunities
+            # Can only see opportunities that have been assigned (not unassigned)
+            query = query.filter(Opportunity.assigned_to_id != None)
+        else:
+            # Other roles cannot see any opportunities
+            query = query.filter(Opportunity.id == None)  # Return empty result
 
     if stage:
         query = query.filter(Opportunity.stage == stage)
@@ -184,17 +186,24 @@ async def get_opportunity(
         user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
         role_name = user_role.name if user_role else None
 
-        # Presales Administrator can only view opportunities assigned to them
-        if role_name == "Presales Administrator" and opportunity.assigned_to_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Access denied")
-        # Presales Solution Owner can only view opportunities assigned to them
-        elif role_name == "Presales Solution Owner" and opportunity.assigned_to_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Access denied")
-        # Presales Solution Member can only view opportunities assigned to them
-        elif role_name == "Presales Solution Member" and opportunity.assigned_to_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Access denied")
-        # Sales Owner can only view their own opportunities
-        elif role_name == "Sales Owner" and opportunity.owner_id != current_user.id:
+        if role_name == "Presales Administrator":
+            # Can only view opportunities assigned to them
+            if opportunity.assigned_to_id != current_user.id:
+                raise HTTPException(status_code=403, detail="Access denied")
+        elif role_name == "Presales Solution Owner":
+            # Can only view opportunities assigned to them
+            if opportunity.assigned_to_id != current_user.id:
+                raise HTTPException(status_code=403, detail="Access denied")
+        elif role_name == "Presales Solution Member":
+            # Can only view opportunities assigned to them
+            if opportunity.assigned_to_id != current_user.id:
+                raise HTTPException(status_code=403, detail="Access denied")
+        elif role_name == "Sales Owner":
+            # Can only view opportunities they created AND have been assigned to someone
+            if opportunity.owner_id != current_user.id or opportunity.assigned_to_id is None:
+                raise HTTPException(status_code=403, detail="Access denied")
+        else:
+            # Other roles cannot view any opportunities
             raise HTTPException(status_code=403, detail="Access denied")
 
     return opportunity
