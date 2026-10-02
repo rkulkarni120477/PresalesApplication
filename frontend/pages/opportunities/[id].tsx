@@ -268,7 +268,7 @@ export default function OpportunityDetailsPage() {
                   Assign to Admin
                 </button>
               )}
-              {user?.role === 'Presales Administrator' && !opportunity?.assigned_to_id && (
+              {user?.role === 'Presales Administrator' && (!opportunity?.assigned_to_id || opportunity?.assigned_by_id === user?.id) && (
                 <button
                   onClick={() => setShowAssignModal(true)}
                   className="inline-flex items-center gap-2 px-4 py-2 bg-presales-dark-green text-white border border-presales-dark-green rounded-lg hover:bg-presales-medium-green transition-all duration-200"
