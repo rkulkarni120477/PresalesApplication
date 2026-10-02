@@ -214,11 +214,13 @@ async def get_opportunity(
 @app.post("/api/opportunities", response_model=OpportunityResponse)
 async def create_opportunity(
     request: OpportunityCreate,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Get first user as default owner (demo mode)
-    default_user = db.query(User).first()
-    owner_id = default_user.id if default_user else 1
+    # Only Sales Owner can create opportunities
+    user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
+    if not user_role or user_role.name != "Sales Owner":
+        raise HTTPException(status_code=403, detail="Only Sales Owner can create opportunities")
 
     opportunity = Opportunity(
         opportunity_id=f"OPP-{uuid.uuid4().hex[:8].upper()}",
@@ -234,7 +236,7 @@ async def create_opportunity(
         stage=request.stage,
         probability=request.probability if hasattr(request, 'probability') else 0.5,
         priority=request.priority,
-        owner_id=owner_id,
+        owner_id=current_user.id,
         technologies=request.technologies if hasattr(request, 'technologies') else [],
         status="active"
     )
