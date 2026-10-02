@@ -70,7 +70,10 @@ class APIClient {
   }
 
   async createOpportunity(data: any) {
-    const response = await this.client.post('/api/opportunities', data);
+    const token = localStorage.getItem('token');
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    console.log('createOpportunity - token:', token ? 'present' : 'missing', 'headers:', headers);
+    const response = await this.client.post('/api/opportunities', data, { headers });
     return response.data;
   }
 
