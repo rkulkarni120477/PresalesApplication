@@ -52,6 +52,7 @@ export default function OpportunityDetailsPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState('');
   const [completionLoading, setCompletionLoading] = useState(false);
   const [editFormData, setEditFormData] = useState({
     name: '',
@@ -165,6 +166,7 @@ export default function OpportunityDetailsPage() {
     if (!opportunity) return;
 
     setEditLoading(true);
+    setFileError('');
     try {
       if (selectedFile) {
         // If a file is selected, use multipart form data
@@ -193,7 +195,9 @@ export default function OpportunityDetailsPage() {
     } catch (error: any) {
       console.error('Failed to update opportunity:', error);
       console.error('Error response:', error?.response?.data);
-      setError('Failed to update opportunity: ' + (error?.response?.data?.detail || error?.message));
+      const errorMsg = error?.response?.data?.detail || error?.message || 'Failed to update opportunity';
+      setFileError(errorMsg);
+      setError(errorMsg);
     } finally {
       setEditLoading(false);
     }
@@ -273,76 +277,77 @@ export default function OpportunityDetailsPage() {
           Back to Opportunities
         </Link>
         <div className="flex items-center gap-2">
-          {(user?.role === 'Sales Owner' || user?.role === 'Presales Administrator' || user?.role === 'Presales Solution Owner') && (
+          {/* Assign buttons */}
+          {user?.role === 'Sales Owner' && !opportunity?.assigned_to_id && (
+            <button
+              onClick={() => setShowAssignModal(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-presales-dark-green text-white border border-presales-dark-green rounded-lg hover:bg-presales-medium-green transition-all duration-200"
+              title="Assign this opportunity to a Presales Administrator"
+            >
+              <Users size={16} />
+              Assign to Admin
+            </button>
+          )}
+          {user?.role === 'Presales Administrator' && (
+            <button
+              onClick={() => setShowAssignModal(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-presales-dark-green text-white border border-presales-dark-green rounded-lg hover:bg-presales-medium-green transition-all duration-200"
+              title="Assign this opportunity to a Presales Solution Owner"
+            >
+              <Users size={16} />
+              Assign to Solution Owner
+            </button>
+          )}
+          {user?.role === 'Presales Solution Owner' && opportunity?.assigned_to_id === user?.id && (
+            <button
+              onClick={() => setShowAssignModal(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-presales-dark-green text-white border border-presales-dark-green rounded-lg hover:bg-presales-medium-green transition-all duration-200"
+              title="Add a Presales Solution Member to this opportunity"
+            >
+              <Users size={16} />
+              Add Presales Solution Member
+            </button>
+          )}
+
+          {/* Edit/Archive/Delete buttons - available to Sales Owner, Solution Owner, and Solution Member */}
+          {(user?.role === 'Sales Owner' || user?.role === 'Presales Solution Owner' || user?.role === 'Presales Solution Member') && (
             <>
-              {user?.role === 'Sales Owner' && !opportunity?.assigned_to_id && (
+              <button
+                onClick={() => setShowEditModal(true)}
+                className="inline-flex items-center gap-2 px-4 py-2 text-presales-dark-green border border-presales-border rounded-lg hover:bg-presales-light-green transition-all duration-200"
+              >
+                <Edit size={16} />
+                Edit
+              </button>
+              <button
+                onClick={handleArchive}
+                className="inline-flex items-center gap-2 px-4 py-2 text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-all duration-200"
+              >
+                <Archive size={16} />
+                Archive
+              </button>
+              {user?.role === 'Sales Owner' && (
                 <button
-                  onClick={() => setShowAssignModal(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-presales-dark-green text-white border border-presales-dark-green rounded-lg hover:bg-presales-medium-green transition-all duration-200"
-                  title="Assign this opportunity to a Presales Administrator"
+                  onClick={handleDelete}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-all duration-200"
                 >
-                  <Users size={16} />
-                  Assign to Admin
+                  <Trash2 size={16} />
+                  Delete
                 </button>
-              )}
-              {user?.role === 'Presales Administrator' && (
-                <button
-                  onClick={() => setShowAssignModal(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-presales-dark-green text-white border border-presales-dark-green rounded-lg hover:bg-presales-medium-green transition-all duration-200"
-                  title="Assign this opportunity to a Presales Solution Owner"
-                >
-                  <Users size={16} />
-                  Assign to Solution Owner
-                </button>
-              )}
-              {user?.role === 'Presales Solution Owner' && opportunity?.assigned_to_id === user?.id && (
-                <button
-                  onClick={() => setShowAssignModal(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-presales-dark-green text-white border border-presales-dark-green rounded-lg hover:bg-presales-medium-green transition-all duration-200"
-                  title="Add a Presales Solution Member to this opportunity"
-                >
-                  <Users size={16} />
-                  Add Presales Solution Member
-                </button>
-              )}
-              {(user?.role === 'Sales Owner' || user?.role === 'Presales Solution Owner' || user?.role === 'Presales Solution Member') && (
-                <>
-                  <button
-                    onClick={() => setShowEditModal(true)}
-                    className="inline-flex items-center gap-2 px-4 py-2 text-presales-dark-green border border-presales-border rounded-lg hover:bg-presales-light-green transition-all duration-200"
-                  >
-                    <Edit size={16} />
-                    Edit
-                  </button>
-                  <button
-                    onClick={handleArchive}
-                    className="inline-flex items-center gap-2 px-4 py-2 text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-all duration-200"
-                  >
-                    <Archive size={16} />
-                    Archive
-                  </button>
-                  {user?.role === 'Sales Owner' && (
-                    <button
-                      onClick={handleDelete}
-                      className="inline-flex items-center gap-2 px-4 py-2 text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-all duration-200"
-                    >
-                      <Trash2 size={16} />
-                      Delete
-                    </button>
-                  )}
-                  {(user?.role === 'Presales Solution Owner' || user?.role === 'Presales Solution Member') && (
-                    <button
-                      onClick={handleCompleteAssignment}
-                      disabled={completionLoading}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white border border-green-600 rounded-lg hover:bg-green-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Users size={16} />
-                      {completionLoading ? 'Completing...' : 'Complete Assignment'}
-                    </button>
-                  )}
-                </>
               )}
             </>
+          )}
+
+          {/* Complete Assignment button - available to Solution Owner and Solution Member */}
+          {(user?.role === 'Presales Solution Owner' || user?.role === 'Presales Solution Member') && (
+            <button
+              onClick={handleCompleteAssignment}
+              disabled={completionLoading}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white border border-green-600 rounded-lg hover:bg-green-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Users size={16} />
+              {completionLoading ? 'Completing...' : 'Complete Assignment'}
+            </button>
           )}
         </div>
       </div>
@@ -609,30 +614,55 @@ export default function OpportunityDetailsPage() {
                     type="file"
                     onChange={(e) => {
                       const file = e.target.files?.[0];
-                      if (file && file.size <= 100 * 1024 * 1024) {
-                        setSelectedFile(file);
-                      } else if (file) {
-                        alert('File size must be less than 100 MB');
+                      if (!file) return;
+
+                      // Validate file type
+                      const supportedExtensions = ['.pdf', '.docx', '.doc', '.txt', '.csv', '.zip', '.md'];
+                      const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
+
+                      if (!supportedExtensions.includes(fileExtension)) {
+                        setFileError(`Unsupported file type: ${fileExtension}. Supported types: ${supportedExtensions.join(', ')}`);
+                        return;
                       }
+
+                      // Validate file size
+                      if (file.size > 100 * 1024 * 1024) {
+                        setFileError('File size must be less than 100 MB');
+                        return;
+                      }
+
+                      setFileError('');
+                      setSelectedFile(file);
                     }}
                     className="hidden"
-                    accept=".pdf,.docx,.txt,.csv,.doc,.zip"
+                    accept=".pdf,.docx,.doc,.txt,.csv,.zip,.md"
                   />
                 </label>
-                {selectedFile && (
+                {fileError && (
+                  <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+                    {fileError}
+                  </div>
+                )}
+                {selectedFile && !fileError && (
                   <div className="mt-2 flex items-center justify-between">
                     <span className="text-xs text-presales-text-secondary">
                       {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
                     </span>
                     <button
                       type="button"
-                      onClick={() => setSelectedFile(null)}
+                      onClick={() => {
+                        setSelectedFile(null);
+                        setFileError('');
+                      }}
                       className="text-xs text-red-600 hover:underline"
                     >
                       Remove
                     </button>
                   </div>
                 )}
+                <p className="text-xs text-presales-text-secondary mt-2">
+                  Supported: PDF, DOCX, DOC, TXT, CSV, ZIP, MD (Max 100 MB)
+                </p>
               </div>
 
               <div className="flex gap-4 justify-end mt-6">
@@ -641,6 +671,7 @@ export default function OpportunityDetailsPage() {
                   onClick={() => {
                     setShowEditModal(false);
                     setSelectedFile(null);
+                    setFileError('');
                   }}
                   disabled={editLoading}
                   className="px-6 py-2 border border-presales-border rounded-lg hover:bg-presales-page-bg transition-all duration-200 disabled:opacity-50"

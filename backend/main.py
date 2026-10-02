@@ -346,6 +346,15 @@ async def create_opportunity(
     if file:
         try:
             file_extension = Path(file.filename).suffix.lower()
+
+            # Validate file type
+            supported_extensions = ['.pdf', '.docx', '.doc', '.txt', '.csv', '.zip', '.md']
+            if file_extension not in supported_extensions:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported file type: {file_extension}. Supported types: {', '.join(supported_extensions)}"
+                )
+
             contents = await file.read()
 
             # Handle ZIP files
@@ -516,6 +525,15 @@ async def update_opportunity(
         try:
             logger.info(f"Processing file upload: {file.filename}")
             file_extension = Path(file.filename).suffix.lower()
+
+            # Validate file type
+            supported_extensions = ['.pdf', '.docx', '.doc', '.txt', '.csv', '.zip', '.md']
+            if file_extension not in supported_extensions:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported file type: {file_extension}. Supported types: {', '.join(supported_extensions)}"
+                )
+
             artifact_id_str = f"ART-{uuid.uuid4().hex[:8].upper()}"
             file_path = UPLOAD_DIR / f"{artifact_id_str}{file_extension}"
 
@@ -725,13 +743,19 @@ async def complete_opportunity(
 
     # Verify user has permission to complete this opportunity
     if current_role_name == "Presales Solution Member":
-        # Can only complete if assigned to them
-        if opportunity.assigned_to_id != current_user.id:
+        # Can complete if assigned to them OR if they're a collaborator
+        is_assigned = opportunity.assigned_to_id == current_user.id
+        is_collaborator = db.query(OpportunityCollaborator).filter(
+            OpportunityCollaborator.opportunity_id == opportunity.id,
+            OpportunityCollaborator.user_id == current_user.id
+        ).first() is not None
+
+        if not (is_assigned or is_collaborator):
             raise HTTPException(status_code=403, detail="You can only complete opportunities assigned to you")
         opportunity.completion_status = "member_completed"
 
     elif current_role_name == "Presales Solution Owner":
-        # Can only complete if assigned to them
+        # Can complete if assigned to them
         if opportunity.assigned_to_id != current_user.id:
             raise HTTPException(status_code=403, detail="You can only complete opportunities assigned to you")
         opportunity.completion_status = "owner_completed"
