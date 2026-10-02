@@ -89,6 +89,7 @@ class Opportunity(Base):
     assigned_to = relationship("User", foreign_keys=[assigned_to_id])
     artifacts = relationship("Artifact", secondary="opportunity_artifact_mappings", back_populates="opportunities")
     mappings = relationship("OpportunityArtifactMapping", back_populates="opportunity")
+    collaborators = relationship("OpportunityCollaborator", back_populates="opportunity")
     audit_logs = relationship("AuditLog", foreign_keys="AuditLog.opportunity_id", back_populates="opportunity")
 
 
@@ -119,6 +120,19 @@ class Artifact(Base):
     owner = relationship("User", back_populates="artifacts")
     opportunities = relationship("Opportunity", secondary="opportunity_artifact_mappings", back_populates="artifacts")
     mappings = relationship("OpportunityArtifactMapping", back_populates="artifact")
+
+
+class OpportunityCollaborator(Base):
+    __tablename__ = "opportunity_collaborators"
+
+    id = Column(Integer, primary_key=True, index=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id"), index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    added_by_id = Column(Integer, ForeignKey("users.id"))
+    added_at = Column(DateTime, default=datetime.utcnow)
+
+    opportunity = relationship("Opportunity", back_populates="collaborators")
+    user = relationship("User", foreign_keys=[user_id])
 
 
 class OpportunityArtifactMapping(Base):

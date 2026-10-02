@@ -100,13 +100,21 @@ export default function OpportunityDetailsPage() {
 
     setAssignLoading(true);
     try {
-      await apiClient.assignOpportunity(opportunity.id, selectedAssigneeId);
+      if (user?.role === 'Presales Solution Owner') {
+        // Solution Owner adds collaborators (doesn't transfer assignment)
+        await apiClient.addCollaborator(opportunity.id, selectedAssigneeId);
+        console.log('Collaborator added successfully');
+      } else {
+        // Other roles assign the opportunity
+        await apiClient.assignOpportunity(opportunity.id, selectedAssigneeId);
+        console.log('Opportunity assigned successfully');
+      }
       setShowAssignModal(false);
       setSelectedAssigneeId(null);
       await loadOpportunity();
-    } catch (error) {
-      console.error('Failed to assign opportunity:', error);
-      setError('Failed to assign opportunity');
+    } catch (error: any) {
+      console.error('Failed to assign/add:', error);
+      setError('Failed to assign/add: ' + (error?.response?.data?.detail || error?.message));
     } finally {
       setAssignLoading(false);
     }

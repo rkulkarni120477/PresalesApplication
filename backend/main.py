@@ -13,7 +13,7 @@ import zipfile
 import tempfile
 
 from database import get_db, init_db
-from models import User, Role, Opportunity, Artifact, OpportunityArtifactMapping, AuditLog
+from models import User, Role, Opportunity, Artifact, OpportunityArtifactMapping, OpportunityCollaborator, AuditLog
 from schemas import (
     LoginRequest, TokenResponse, UserResponse, OpportunityCreate,
     OpportunityUpdate, OpportunityResponse, ArtifactCreate, ArtifactResponse,
@@ -202,8 +202,13 @@ async def list_opportunities(
             )
         )
     elif role_name == "Presales Solution Member":
-        # Can only see opportunities assigned to them
-        query = query.filter(Opportunity.assigned_to_id == current_user.id)
+        # Can see opportunities assigned to them OR where they are collaborators
+        query = query.filter(
+            or_(
+                Opportunity.assigned_to_id == current_user.id,
+                Opportunity.collaborators.any(OpportunityCollaborator.user_id == current_user.id)
+            )
+        )
     elif role_name == "Sales Owner":
         # Sees the opportunities they created, assigned or not
         query = query.filter(Opportunity.owner_id == current_user.id)
@@ -255,8 +260,9 @@ async def get_opportunity(
             if opportunity.assigned_to_id != current_user.id and opportunity.assigned_by_id != current_user.id:
                 raise HTTPException(status_code=403, detail="Access denied")
         elif role_name == "Presales Solution Member":
-            # Can only view opportunities assigned to them
-            if opportunity.assigned_to_id != current_user.id:
+            # Can view opportunities assigned to them OR where they are collaborators
+            is_collaborator = any(c.user_id == current_user.id for c in opportunity.collaborators)
+            if opportunity.assigned_to_id != current_user.id and not is_collaborator:
                 raise HTTPException(status_code=403, detail="Access denied")
         elif role_name == "Sales Owner":
             # Can only view opportunities they created
@@ -633,6 +639,67 @@ async def assign_opportunity(
 
     return {
         "message": f"Opportunity assigned to {assigned_user.first_name} {assigned_user.last_name}",
+        "opportunity": enrich_opportunity(opportunity)
+    }
+
+
+@app.post("/api/opportunities/{opp_id}/collaborators")
+async def add_collaborator(
+    opp_id: int,
+    collaborator_user_id: int = Body(..., embed=True),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    opportunity = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
+    if not opportunity:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    collaborator_user = db.query(User).filter(User.id == collaborator_user_id).first()
+    if not collaborator_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Check current user's role
+    current_user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
+    current_role_name = current_user_role.name if current_user_role else None
+
+    # Check collaborator user's role
+    collaborator_role = db.query(Role).filter(Role.id == collaborator_user.role_id).first()
+    collaborator_role_name = collaborator_role.name if collaborator_role else None
+
+    # Only Presales Solution Owner can add collaborators
+    if current_role_name != "Presales Solution Owner":
+        raise HTTPException(status_code=403, detail="Only Presales Solution Owner can add collaborators")
+
+    # Collaborator must be a Presales Solution Member
+    if collaborator_role_name != "Presales Solution Member":
+        raise HTTPException(status_code=400, detail="Only Presales Solution Members can be added as collaborators")
+
+    # Opportunity must be assigned to current user
+    if opportunity.assigned_to_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only add collaborators to opportunities assigned to you")
+
+    # Check if already a collaborator
+    existing = db.query(OpportunityCollaborator).filter(
+        OpportunityCollaborator.opportunity_id == opp_id,
+        OpportunityCollaborator.user_id == collaborator_user_id
+    ).first()
+
+    if existing:
+        raise HTTPException(status_code=400, detail="User is already a collaborator on this opportunity")
+
+    # Add collaborator
+    collaborator = OpportunityCollaborator(
+        opportunity_id=opp_id,
+        user_id=collaborator_user_id,
+        added_by_id=current_user.id
+    )
+    db.add(collaborator)
+    db.commit()
+
+    logger.info(f"Added {collaborator_user.first_name} {collaborator_user.last_name} as collaborator to opportunity {opp_id}")
+
+    return {
+        "message": f"Added {collaborator_user.first_name} {collaborator_user.last_name} as collaborator",
         "opportunity": enrich_opportunity(opportunity)
     }
 

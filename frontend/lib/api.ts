@@ -88,6 +88,14 @@ class APIClient {
     return response.data;
   }
 
+  async addCollaborator(opportunityId: number, userId: number) {
+    const response = await this.client.post(
+      `/api/opportunities/${opportunityId}/collaborators`,
+      { collaborator_user_id: userId }
+    );
+    return response.data;
+  }
+
   async deleteOpportunity(opportunityId: number) {
     const response = await this.client.delete(`/api/opportunities/${opportunityId}`);
     return response.data;
