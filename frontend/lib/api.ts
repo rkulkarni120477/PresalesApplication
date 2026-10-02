@@ -13,11 +13,13 @@ class APIClient {
       },
     });
 
-    // Add token to requests
+    // Add token to all requests
     this.client.interceptors.request.use((config) => {
       const token = localStorage.getItem('token');
+      console.log('Request interceptor - checking token:', { url: config.url, hasToken: !!token });
       if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+        config.headers['Authorization'] = `Bearer ${token}`;
+        console.log('Authorization header set for', config.url);
       } else {
         console.warn('No token found in localStorage for request:', config.url);
       }
