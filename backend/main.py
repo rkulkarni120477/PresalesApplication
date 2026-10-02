@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Query, UploadFile, File, Form
+from fastapi import FastAPI, Depends, HTTPException, status, Query, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from datetime import timedelta
@@ -97,7 +97,7 @@ async def login(request: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     demo_user = DEMO_USERS[request.email]
-    access_token = create_access_token(data={"sub": demo_user["id"]})
+    access_token = create_access_token(data={"sub": str(demo_user["id"])})
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -214,12 +214,47 @@ async def get_opportunity(
 @app.post("/api/opportunities", response_model=OpportunityResponse)
 async def create_opportunity(
     request: OpportunityCreate,
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    http_request: Request,
     db: Session = Depends(get_db)
 ):
-    # Require authentication
-    if not current_user:
+    # Manual auth for debugging
+    auth_header = http_request.headers.get("authorization")
+    import logging as logging_module
+    logger = logging_module.getLogger(__name__)
+    logger.info(f"POST /api/opportunities - Auth header: {auth_header[:50] if auth_header else 'None'}")
+
+    if not auth_header:
         raise HTTPException(status_code=401, detail="Authentication required")
+
+    # Extract token
+    try:
+        scheme, token = auth_header.split()
+        if scheme.lower() != "bearer":
+            raise HTTPException(status_code=401, detail="Invalid auth scheme")
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid auth header format")
+
+    # Validate token
+    from auth import settings
+    from jose import jwt, JWTError
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        user_id_str = payload.get("sub")
+        if not user_id_str:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        user_id = int(user_id_str)
+        logger.info(f"Token valid for user {user_id}")
+    except JWTError as e:
+        logger.error(f"JWT error: {e}")
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    # Get user
+    current_user = db.query(User).filter(User.id == user_id).first()
+    if not current_user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    # Check role
+    user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
 
     # Only Sales Owner can create opportunities
     user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
