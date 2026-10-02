@@ -16,7 +16,7 @@ from schemas import (
     OpportunityUpdate, OpportunityResponse, ArtifactCreate, ArtifactResponse,
     MappingCreate, MappingResponse, AuditLogResponse, HealthResponse, AIRecommendationResponse
 )
-from auth import create_access_token, get_current_user, verify_password, hash_password
+from auth import create_access_token, get_current_user, get_current_user_optional, verify_password, hash_password
 from services.bedrock_service import bedrock_service
 from services.vector_db_service import vector_db_service
 from services.document_parser import document_parser
@@ -126,7 +126,7 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
 @app.get("/api/opportunities", response_model=List[OpportunityResponse])
 async def list_opportunities(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     skip: int = Query(0),
     limit: int = Query(50),
     stage: Optional[str] = None,
@@ -136,23 +136,24 @@ async def list_opportunities(
 ):
     query = db.query(Opportunity)
 
-    # Role-based filtering
-    user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
-    role_name = user_role.name if user_role else None
+    # Role-based filtering if user is authenticated
+    if current_user and current_user.role_id:
+        user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
+        role_name = user_role.name if user_role else None
 
-    # Presales Administrator can only see opportunities assigned to them by Sales Owner
-    if role_name == "Presales Administrator":
-        query = query.filter(Opportunity.assigned_to_id == current_user.id)
-    # Presales Solution Owner can only see opportunities assigned to them by Presales Administrator
-    elif role_name == "Presales Solution Owner":
-        query = query.filter(Opportunity.assigned_to_id == current_user.id)
-    # Presales Solution Member can only see opportunities assigned to them by Presales Solution Owner
-    elif role_name == "Presales Solution Member":
-        query = query.filter(Opportunity.assigned_to_id == current_user.id)
-    # Sales Owner can only see their own opportunities
-    elif role_name == "Sales Owner":
-        query = query.filter(Opportunity.owner_id == current_user.id)
-    # Other roles can see all opportunities
+        # Presales Administrator can only see opportunities assigned to them by Sales Owner
+        if role_name == "Presales Administrator":
+            query = query.filter(Opportunity.assigned_to_id == current_user.id)
+        # Presales Solution Owner can only see opportunities assigned to them by Presales Administrator
+        elif role_name == "Presales Solution Owner":
+            query = query.filter(Opportunity.assigned_to_id == current_user.id)
+        # Presales Solution Member can only see opportunities assigned to them by Presales Solution Owner
+        elif role_name == "Presales Solution Member":
+            query = query.filter(Opportunity.assigned_to_id == current_user.id)
+        # Sales Owner can only see their own opportunities
+        elif role_name == "Sales Owner":
+            query = query.filter(Opportunity.owner_id == current_user.id)
+        # Other roles can see all opportunities
 
     if stage:
         query = query.filter(Opportunity.stage == stage)
@@ -172,28 +173,29 @@ async def list_opportunities(
 async def get_opportunity(
     opp_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     opportunity = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
     if not opportunity:
         raise HTTPException(status_code=404, detail="Opportunity not found")
 
-    # Check access based on role
-    user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
-    role_name = user_role.name if user_role else None
+    # Check access based on role if user is authenticated
+    if current_user and current_user.role_id:
+        user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
+        role_name = user_role.name if user_role else None
 
-    # Presales Administrator can only view opportunities assigned to them
-    if role_name == "Presales Administrator" and opportunity.assigned_to_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
-    # Presales Solution Owner can only view opportunities assigned to them
-    elif role_name == "Presales Solution Owner" and opportunity.assigned_to_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
-    # Presales Solution Member can only view opportunities assigned to them
-    elif role_name == "Presales Solution Member" and opportunity.assigned_to_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
-    # Sales Owner can only view their own opportunities
-    elif role_name == "Sales Owner" and opportunity.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
+        # Presales Administrator can only view opportunities assigned to them
+        if role_name == "Presales Administrator" and opportunity.assigned_to_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        # Presales Solution Owner can only view opportunities assigned to them
+        elif role_name == "Presales Solution Owner" and opportunity.assigned_to_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        # Presales Solution Member can only view opportunities assigned to them
+        elif role_name == "Presales Solution Member" and opportunity.assigned_to_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        # Sales Owner can only view their own opportunities
+        elif role_name == "Sales Owner" and opportunity.owner_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
 
     return opportunity
 
