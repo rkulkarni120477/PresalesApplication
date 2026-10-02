@@ -671,7 +671,9 @@ export default function OpportunityDetailsPage() {
                 disabled={!selectedAssigneeId || assignLoading}
                 className="px-6 py-2 bg-presales-dark-green text-white rounded-lg hover:bg-presales-medium-green transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {assignLoading ? 'Assigning...' : 'Assign'}
+                {assignLoading
+                  ? (user?.role === 'Presales Solution Owner' ? 'Adding...' : 'Assigning...')
+                  : (user?.role === 'Presales Solution Owner' ? 'Add' : 'Assign')}
               </button>
             </div>
           </div>
