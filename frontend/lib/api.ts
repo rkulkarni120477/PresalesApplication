@@ -25,6 +25,21 @@ class APIClient {
       }
       return config;
     });
+
+    // Expired/invalid token: clear session and re-login
+    this.client.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (error?.response?.status === 401 && typeof window !== 'undefined') {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          if (window.location.pathname !== '/login') {
+            window.location.href = '/login';
+          }
+        }
+        return Promise.reject(error);
+      }
+    );
   }
 
   // Auth
@@ -64,6 +79,11 @@ class APIClient {
     return response.data;
   }
 
+  async deleteOpportunity(opportunityId: number) {
+    const response = await this.client.delete(`/api/opportunities/${opportunityId}`);
+    return response.data;
+  }
+
   async getOpportunity(id: number) {
     const response = await this.client.get(`/api/opportunities/${id}`);
     return response.data;
@@ -71,6 +91,15 @@ class APIClient {
 
   async createOpportunity(data: any) {
     const response = await this.client.post('/api/opportunities', data);
+    return response.data;
+  }
+
+  async createOpportunityWithFile(formData: FormData) {
+    const response = await this.client.post('/api/opportunities', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
     return response.data;
   }
 

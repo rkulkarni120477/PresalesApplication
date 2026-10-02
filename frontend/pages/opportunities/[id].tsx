@@ -62,7 +62,7 @@ export default function OpportunityDetailsPage() {
   const loadPresalesAdmins = async () => {
     try {
       const users = await apiClient.getUsers();
-      const admins = users.filter((u: any) => u.role === 'Presales Administrator');
+      const admins = users.filter((u: any) => u.role?.name === 'Presales Administrator');
       setPresalesAdmins(admins);
     } catch (error) {
       console.error('Failed to load Presales Administrators:', error);
@@ -83,6 +83,18 @@ export default function OpportunityDetailsPage() {
       setError('Failed to assign opportunity');
     } finally {
       setAssignLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!opportunity || !confirm('Are you sure you want to delete this opportunity?')) return;
+
+    try {
+      await apiClient.deleteOpportunity(opportunity.id);
+      router.push('/opportunities');
+    } catch (error) {
+      console.error('Failed to delete opportunity:', error);
+      setError('Failed to delete opportunity');
     }
   };
 
@@ -146,7 +158,10 @@ export default function OpportunityDetailsPage() {
                 <Edit size={16} />
                 Edit
               </button>
-              <button className="inline-flex items-center gap-2 px-4 py-2 text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-all duration-200">
+              <button
+                onClick={handleDelete}
+                className="inline-flex items-center gap-2 px-4 py-2 text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-all duration-200"
+              >
                 <Trash2 size={16} />
                 Delete
               </button>

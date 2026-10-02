@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Query, UploadFile, File, Form
+from fastapi import FastAPI, Depends, HTTPException, status, Query, UploadFile, File, Form, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from datetime import timedelta
@@ -8,9 +8,11 @@ import logging
 import os
 from pathlib import Path
 import shutil
+import zipfile
+import tempfile
 
 from database import get_db, init_db
-from models import User, Opportunity, Artifact, OpportunityArtifactMapping, AuditLog
+from models import User, Role, Opportunity, Artifact, OpportunityArtifactMapping, AuditLog
 from schemas import (
     LoginRequest, TokenResponse, UserResponse, OpportunityCreate,
     OpportunityUpdate, OpportunityResponse, ArtifactCreate, ArtifactResponse,
@@ -153,8 +155,8 @@ async def list_opportunities(
         # Can only see opportunities assigned to them by Presales Solution Owner
         query = query.filter(Opportunity.assigned_to_id == current_user.id)
     elif role_name == "Sales Owner":
-        # Can only see opportunities that have been assigned (not unassigned)
-        query = query.filter(Opportunity.assigned_to_id != None)
+        # Sees the opportunities they created, assigned or not
+        query = query.filter(Opportunity.owner_id == current_user.id)
     else:
         # Other roles cannot see any opportunities
         return []
@@ -201,8 +203,8 @@ async def get_opportunity(
             if opportunity.assigned_to_id != current_user.id:
                 raise HTTPException(status_code=403, detail="Access denied")
         elif role_name == "Sales Owner":
-            # Can only view opportunities they created AND have been assigned to someone
-            if opportunity.owner_id != current_user.id or opportunity.assigned_to_id is None:
+            # Can only view opportunities they created
+            if opportunity.owner_id != current_user.id:
                 raise HTTPException(status_code=403, detail="Access denied")
         else:
             # Other roles cannot view any opportunities
@@ -213,12 +215,19 @@ async def get_opportunity(
 
 @app.post("/api/opportunities", response_model=OpportunityResponse)
 async def create_opportunity(
-    request: OpportunityCreate,
-    http_request: Request,
+    name: str = Form(...),
+    customer: str = Form(...),
+    industry: str = Form(...),
+    region: str = Form(default=""),
+    stage: str = Form(default="Discovery"),
+    priority: str = Form(default="Medium"),
+    estimated_value: Optional[float] = Form(default=None),
+    file: Optional[UploadFile] = File(default=None),
+    http_request: Request = None,
     db: Session = Depends(get_db)
 ):
-    # Manual auth for debugging
-    auth_header = http_request.headers.get("authorization")
+    # Manual auth
+    auth_header = http_request.headers.get("authorization") if http_request else None
     import logging as logging_module
     logger = logging_module.getLogger(__name__)
     logger.info(f"POST /api/opportunities - Auth header: {auth_header[:50] if auth_header else 'None'}")
@@ -226,7 +235,6 @@ async def create_opportunity(
     if not auth_header:
         raise HTTPException(status_code=401, detail="Authentication required")
 
-    # Extract token
     try:
         scheme, token = auth_header.split()
         if scheme.lower() != "bearer":
@@ -234,7 +242,6 @@ async def create_opportunity(
     except ValueError:
         raise HTTPException(status_code=401, detail="Invalid auth header format")
 
-    # Validate token
     from auth import settings
     from jose import jwt, JWTError
     try:
@@ -243,44 +250,160 @@ async def create_opportunity(
         if not user_id_str:
             raise HTTPException(status_code=401, detail="Invalid token")
         user_id = int(user_id_str)
-        logger.info(f"Token valid for user {user_id}")
     except JWTError as e:
         logger.error(f"JWT error: {e}")
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    # Get user
     current_user = db.query(User).filter(User.id == user_id).first()
     if not current_user:
         raise HTTPException(status_code=401, detail="User not found")
 
-    # Check role
-    user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
-
-    # Only Sales Owner can create opportunities
     user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
     if not user_role or user_role.name != "Sales Owner":
         raise HTTPException(status_code=403, detail="Only Sales Owner can create opportunities")
 
     opportunity = Opportunity(
         opportunity_id=f"OPP-{uuid.uuid4().hex[:8].upper()}",
-        name=request.name,
-        customer=request.customer,
-        industry=request.industry,
-        region=request.region,
-        description=request.description if hasattr(request, 'description') else None,
-        business_problem=request.business_problem if hasattr(request, 'business_problem') else None,
-        requirements=request.requirements if hasattr(request, 'requirements') else None,
-        proposed_solution=request.proposed_solution if hasattr(request, 'proposed_solution') else None,
-        estimated_value=request.estimated_value,
-        stage=request.stage,
-        probability=request.probability if hasattr(request, 'probability') else 0.5,
-        priority=request.priority,
+        name=name,
+        customer=customer,
+        industry=industry,
+        region=region,
+        estimated_value=estimated_value,
+        stage=stage,
+        probability=0.5,
+        priority=priority,
         owner_id=current_user.id,
-        technologies=request.technologies if hasattr(request, 'technologies') else [],
         status="active"
     )
     db.add(opportunity)
     db.commit()
+
+    # Handle file upload if provided
+    if file:
+        try:
+            file_extension = Path(file.filename).suffix.lower()
+            contents = await file.read()
+
+            # Handle ZIP files
+            if file_extension == ".zip":
+                try:
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        temp_zip_path = Path(temp_dir) / file.filename
+                        with open(temp_zip_path, 'wb') as f:
+                            f.write(contents)
+
+                        # Extract ZIP
+                        with zipfile.ZipFile(temp_zip_path, 'r') as zip_ref:
+                            zip_ref.extractall(temp_dir)
+
+                        # Process all extracted files
+                        for extracted_file in Path(temp_dir).rglob('*'):
+                            if extracted_file.is_file() and extracted_file.name != file.filename:
+                                extracted_extension = extracted_file.suffix.lower()
+                                if extracted_extension in ['.pdf', '.docx', '.txt', '.csv', '.doc']:
+                                    try:
+                                        # Create artifact for each file
+                                        artifact_id = f"ART-{uuid.uuid4().hex[:8].upper()}"
+                                        artifact_path = UPLOAD_DIR / f"{artifact_id}{extracted_extension}"
+
+                                        # Copy file to storage
+                                        shutil.copy(str(extracted_file), str(artifact_path))
+
+                                        # Parse document
+                                        parsed_content = document_parser.parse_document(
+                                            str(artifact_path),
+                                            f"application/{extracted_extension.lstrip('.')}"
+                                        )
+
+                                        # Create artifact record
+                                        artifact = Artifact(
+                                            name=extracted_file.name,
+                                            artifact_type="document",
+                                            owner_id=current_user.id,
+                                            source_reference=str(artifact_path),
+                                            description=f"Artifact from {file.filename} for opportunity {opportunity.name}"
+                                        )
+                                        db.add(artifact)
+                                        db.commit()
+
+                                        # Tokenize and add to vector DB
+                                        if parsed_content:
+                                            vector_db_service.add_document(
+                                                doc_id=f"{artifact.id}",
+                                                content=parsed_content,
+                                                metadata={
+                                                    "artifact_id": artifact.id,
+                                                    "artifact_name": extracted_file.name,
+                                                    "opportunity_id": opportunity.id,
+                                                    "opportunity_name": opportunity.name,
+                                                    "source_zip": file.filename
+                                                }
+                                            )
+
+                                        # Map artifact to opportunity
+                                        mapping = OpportunityArtifactMapping(
+                                            opportunity_id=opportunity.id,
+                                            artifact_id=artifact.id
+                                        )
+                                        db.add(mapping)
+                                        db.commit()
+
+                                    except Exception as e:
+                                        logger.error(f"Error processing file {extracted_file.name} from ZIP: {e}")
+                                        continue
+
+                except Exception as e:
+                    logger.error(f"Error extracting ZIP file: {e}")
+
+            else:
+                # Handle single file upload
+                artifact_id = f"ART-{uuid.uuid4().hex[:8].upper()}"
+                file_path = UPLOAD_DIR / f"{artifact_id}{file_extension}"
+
+                # Save file
+                with open(file_path, 'wb') as f:
+                    f.write(contents)
+
+                # Parse document
+                parsed_content = document_parser.parse_document(str(file_path), file.content_type)
+
+                # Create artifact record
+                artifact = Artifact(
+                    name=file.filename,
+                    artifact_type="document",
+                    owner_id=current_user.id,
+                    source_reference=str(file_path),
+                    description=f"Artifact for opportunity {opportunity.name}"
+                )
+                db.add(artifact)
+                db.commit()
+
+                # Tokenize and add to vector DB
+                if parsed_content:
+                    vector_db_service.add_document(
+                        doc_id=f"{artifact.id}",
+                        content=parsed_content,
+                        metadata={
+                            "artifact_id": artifact.id,
+                            "artifact_name": file.filename,
+                            "opportunity_id": opportunity.id,
+                            "opportunity_name": opportunity.name
+                        }
+                    )
+
+                # Map artifact to opportunity
+                mapping = OpportunityArtifactMapping(
+                    opportunity_id=opportunity.id,
+                    artifact_id=artifact.id
+                )
+                db.add(mapping)
+                db.commit()
+
+        except Exception as e:
+            logger.error(f"Error processing file: {e}")
+            # Don't fail opportunity creation if file processing fails
+            pass
+
     return opportunity
 
 
@@ -305,7 +428,7 @@ async def update_opportunity(
 @app.post("/api/opportunities/{opp_id}/assign")
 async def assign_opportunity(
     opp_id: int,
-    assigned_to_user_id: int,
+    assigned_to_user_id: int = Body(..., embed=True),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -349,6 +472,37 @@ async def assign_opportunity(
         "message": f"Opportunity assigned to {assigned_user.first_name} {assigned_user.last_name}",
         "opportunity": opportunity
     }
+
+
+@app.delete("/api/opportunities/{opp_id}")
+async def delete_opportunity(
+    opp_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    opportunity = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
+    if not opportunity:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    # Check if user is Sales Owner
+    current_user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
+    current_role_name = current_user_role.name if current_user_role else None
+
+    if current_role_name != "Sales Owner":
+        raise HTTPException(status_code=403, detail="Only Sales Owner can delete opportunities")
+
+    # Check if user is the owner of this opportunity
+    if opportunity.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only delete opportunities you created")
+
+    # Delete associated artifact mappings first
+    db.query(OpportunityArtifactMapping).filter(OpportunityArtifactMapping.opportunity_id == opp_id).delete()
+
+    # Delete the opportunity
+    db.delete(opportunity)
+    db.commit()
+
+    return {"message": "Opportunity deleted successfully"}
 
 
 # Artifacts endpoints
