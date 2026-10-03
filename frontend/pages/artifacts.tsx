@@ -26,6 +26,8 @@ export default function ArtifactsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState('');
+  const [elapsedTime, setElapsedTime] = useState(0);
+  const [estimatedTotalTime, setEstimatedTotalTime] = useState(0);
   const [formData, setFormData] = useState({
     name: '',
     artifact_type: 'Proposal',
@@ -35,6 +37,17 @@ export default function ArtifactsPage() {
     summary: '',
     file: null as File | null,
   });
+
+  // Update elapsed time every second during creation
+  useEffect(() => {
+    if (!createLoading) return;
+
+    const interval = setInterval(() => {
+      setElapsedTime((prev) => prev + 1);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [createLoading]);
 
   useEffect(() => {
     const timer = setTimeout(loadArtifacts, 400);
@@ -77,6 +90,12 @@ export default function ArtifactsPage() {
       return;
     }
 
+    // Calculate estimated processing time based on file size (rough estimate: 10 min per 100MB)
+    const fileSizeMB = formData.file ? formData.file.size / 1024 / 1024 : 0;
+    const estimatedSeconds = Math.max(30, Math.ceil((fileSizeMB / 100) * 600)); // 30 sec minimum, 10 min per 100MB
+
+    setElapsedTime(0);
+    setEstimatedTotalTime(estimatedSeconds);
     setCreateLoading(true);
     try {
       const submitData = new FormData();
@@ -259,12 +278,36 @@ export default function ArtifactsPage() {
                 </div>
               </div>
 
+              {createLoading && (
+                <div className="mt-6 space-y-2 bg-presales-page-bg p-4 rounded-lg">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-presales-text font-medium">Creating artifact...</span>
+                    <span className="text-presales-text-secondary">
+                      {Math.floor(elapsedTime)}s / ~{estimatedTotalTime}s
+                    </span>
+                  </div>
+                  <div className="w-full bg-presales-border rounded-full h-2 overflow-hidden">
+                    <div
+                      className="h-full bg-presales-dark-green transition-all duration-300 ease-out"
+                      style={{
+                        width: `${Math.min(100, (elapsedTime / estimatedTotalTime) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="text-xs text-presales-text-secondary">
+                    {Math.floor((elapsedTime / estimatedTotalTime) * 100)}% complete • Parsing and indexing your file
+                  </p>
+                </div>
+              )}
+
               <div className="flex gap-4 justify-end mt-6">
                 <button
                   type="button"
                   onClick={() => {
                     setShowCreateModal(false);
                     setCreateError('');
+                    setElapsedTime(0);
+                    setEstimatedTotalTime(0);
                   }}
                   disabled={createLoading}
                   className="px-6 py-2 border border-presales-border rounded-lg hover:bg-presales-page-bg transition-all duration-200 disabled:opacity-50"
