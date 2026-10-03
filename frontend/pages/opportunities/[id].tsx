@@ -150,8 +150,8 @@ export default function OpportunityDetailsPage() {
     if (!opportunity) return;
 
     const confirmMessage = user?.role === 'Presales Solution Member'
-      ? 'Is everything uploaded from your side for this opportunity?'
-      : 'Are you sure you want to mark this as complete?';
+      ? 'Is everything uploaded from your side for this task?'
+      : 'Are you sure you want to mark this assignment as complete?';
 
     if (!confirm(confirmMessage)) return;
 
@@ -348,7 +348,7 @@ export default function OpportunityDetailsPage() {
             </button>
           )}
 
-          {/* Complete Assignment button - available to Solution Owner and Solution Member */}
+          {/* Complete button - available to Solution Owner and Solution Member */}
           {(user?.role === 'Presales Solution Owner' || user?.role === 'Presales Solution Member') && (
             <button
               onClick={handleCompleteAssignment}
@@ -356,7 +356,9 @@ export default function OpportunityDetailsPage() {
               className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white border border-green-600 rounded-lg hover:bg-green-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Users size={16} />
-              {completionLoading ? 'Completing...' : 'Complete Assignment'}
+              {completionLoading
+                ? (user?.role === 'Presales Solution Member' ? 'Completing Task...' : 'Completing Assignment...')
+                : (user?.role === 'Presales Solution Member' ? 'Complete Task' : 'Complete Assignment')}
             </button>
           )}
         </div>
