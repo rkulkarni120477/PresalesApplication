@@ -55,13 +55,28 @@ class DocumentParser:
             text = ""
             with open(file_path, "rb") as f:
                 pdf_reader = PdfReader(f)
-                for page_num, page in enumerate(pdf_reader.pages):
-                    page_text = page.extract_text()
-                    if page_text:
-                        text += f"\n--- Page {page_num + 1} ---\n{page_text}"
+                total_pages = len(pdf_reader.pages)
+                # For large PDFs (>500 pages), limit to first 500 pages to avoid timeout
+                max_pages = min(total_pages, 500)
 
-            logger.info(f"Extracted {len(text)} characters from PDF")
-            return text
+                logger.info(f"Parsing PDF with {total_pages} pages (extracting up to {max_pages})")
+
+                for page_num in range(max_pages):
+                    try:
+                        page = pdf_reader.pages[page_num]
+                        page_text = page.extract_text()
+                        if page_text:
+                            text += f"\n--- Page {page_num + 1} ---\n{page_text}"
+
+                        # Log progress every 50 pages
+                        if (page_num + 1) % 50 == 0:
+                            logger.info(f"Progress: Extracted {page_num + 1}/{max_pages} pages ({len(text)} chars so far)")
+                    except Exception as page_error:
+                        logger.warning(f"Error parsing page {page_num + 1}: {page_error}, continuing...")
+                        continue
+
+                logger.info(f"Extracted {len(text)} characters from PDF ({max_pages}/{total_pages} pages)")
+                return text
         except Exception as e:
             logger.error(f"Error parsing PDF: {e}")
             raise
