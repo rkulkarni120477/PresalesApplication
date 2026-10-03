@@ -142,7 +142,9 @@ class APIClient {
 
   async updateOpportunityWithFile(id: number, formData: FormData) {
     // Don't set Content-Type header - axios will set it automatically with correct boundary
-    const response = await this.client.put(`/api/opportunities/${id}`, formData);
+    const response = await this.client.put(`/api/opportunities/${id}`, formData, {
+      timeout: 10 * 60 * 1000, // 10 minute timeout for large file uploads
+    });
     return response.data;
   }
 
@@ -170,8 +172,19 @@ class APIClient {
   async createArtifactWithFile(formData: FormData) {
     const response = await this.client.post('/api/artifacts', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 10 * 60 * 1000, // 10 minute timeout for large file uploads
     });
     return response.data;
+  }
+
+  async deleteArtifact(id: number) {
+    const response = await this.client.delete(`/api/artifacts/${id}`);
+    return response.data;
+  }
+
+  async downloadArtifactFile(id: number) {
+    const response = await this.client.get(`/api/artifacts/${id}/download`, { responseType: 'blob' });
+    return response.data as Blob;
   }
 
   async searchArtifacts(query: string, limit: number = 5) {

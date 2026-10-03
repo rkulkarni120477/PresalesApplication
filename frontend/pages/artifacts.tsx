@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { apiClient } from '@/lib/api';
-import { Plus, Search, Filter, Eye } from 'lucide-react';
+import { Plus, Search, Filter, Eye, Trash2 } from 'lucide-react';
+import { useAuthStore } from '@/lib/store';
 
 interface Artifact {
   id: number;
@@ -16,6 +17,8 @@ interface Artifact {
 }
 
 export default function ArtifactsPage() {
+  const { user } = useAuthStore();
+  const canDelete = user?.role === 'Artifact Repository Owner';
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -34,8 +37,10 @@ export default function ArtifactsPage() {
   });
 
   useEffect(() => {
-    loadArtifacts();
-  }, []);
+    const timer = setTimeout(loadArtifacts, 400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, artifactType]);
 
   const loadArtifacts = async () => {
     try {
@@ -50,6 +55,16 @@ export default function ArtifactsPage() {
       console.error('Failed to load artifacts:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteArtifact = async (art: Artifact) => {
+    if (!window.confirm(`Delete artifact "${art.name}"? This cannot be undone.`)) return;
+    try {
+      await apiClient.deleteArtifact(art.id);
+      setArtifacts((prev) => prev.filter((a) => a.id !== art.id));
+    } catch (error: any) {
+      alert(error?.response?.data?.detail || 'Failed to delete artifact');
     }
   };
 
@@ -122,11 +137,10 @@ export default function ArtifactsPage() {
           <Search size={20} className="text-presales-text-secondary" />
           <input
             type="text"
-            placeholder="Search artifacts..."
+            placeholder="Semantic search artifacts..."
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
-              loadArtifacts();
             }}
             className="flex-1 border border-presales-border rounded-lg px-4 py-2"
           />
@@ -138,7 +152,6 @@ export default function ArtifactsPage() {
             value={artifactType}
             onChange={(e) => {
               setArtifactType(e.target.value);
-              loadArtifacts();
             }}
             className="border border-presales-border rounded-lg px-4 py-2"
           >
@@ -230,9 +243,16 @@ export default function ArtifactsPage() {
                     accept="*/*"
                   />
                   {formData.file && (
-                    <p className="text-xs text-presales-text-secondary mt-2">
-                      Selected: {formData.file.name} ({(formData.file.size / 1024 / 1024).toFixed(2)} MB)
-                    </p>
+                    <div className="mt-2 space-y-2">
+                      <p className="text-xs text-presales-text-secondary">
+                        Selected: {formData.file.name} ({(formData.file.size / 1024 / 1024).toFixed(2)} MB)
+                      </p>
+                      {formData.file.size > 50 * 1024 * 1024 && (
+                        <p className="text-xs text-orange-600 bg-orange-50 p-2 rounded">
+                          ⚠️ Large file detected ({(formData.file.size / 1024 / 1024).toFixed(2)} MB). Processing may take several minutes. Please wait while the file is parsed and indexed.
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
@@ -263,18 +283,18 @@ export default function ArtifactsPage() {
       )}
 
       {/* Table */}
-      <div className="card overflow-x-auto">
-        <table className="w-full">
+      <div className="card overflow-x-hidden">
+        <table className="w-full table-fixed text-sm">
           <thead>
             <tr className="border-b-2 border-presales-border">
-              <th className="text-left py-3 px-4 font-semibold text-presales-text">ID</th>
-              <th className="text-left py-3 px-4 font-semibold text-presales-text">Name</th>
-              <th className="text-left py-3 px-4 font-semibold text-presales-text">Type</th>
-              <th className="text-left py-3 px-4 font-semibold text-presales-text">Category</th>
-              <th className="text-left py-3 px-4 font-semibold text-presales-text">Industry</th>
-              <th className="text-left py-3 px-4 font-semibold text-presales-text">Version</th>
-              <th className="text-left py-3 px-4 font-semibold text-presales-text">Usage Count</th>
-              <th className="text-center py-3 px-4 font-semibold text-presales-text">Actions</th>
+              <th className="w-[9%] text-left py-3 px-2 font-semibold text-presales-text">ID</th>
+              <th className="w-[22%] text-left py-3 px-2 font-semibold text-presales-text">Name</th>
+              <th className="w-[14%] text-left py-3 px-2 font-semibold text-presales-text">Type</th>
+              <th className="w-[11%] text-left py-3 px-2 font-semibold text-presales-text">Category</th>
+              <th className="w-[10%] text-left py-3 px-2 font-semibold text-presales-text">Industry</th>
+              <th className="w-[8%] text-left py-3 px-2 font-semibold text-presales-text">Version</th>
+              <th className="w-[9%] text-left py-3 px-2 font-semibold text-presales-text">Usage Count</th>
+              <th className="w-[17%] text-center py-3 px-2 font-semibold text-presales-text">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -293,25 +313,34 @@ export default function ArtifactsPage() {
             ) : (
               artifacts.map((art) => (
                 <tr key={art.id} className="border-b border-presales-border hover:bg-presales-light-green">
-                  <td className="py-3 px-4 text-presales-text text-sm font-medium">{art.artifact_id}</td>
-                  <td className="py-3 px-4 text-presales-text font-medium">{art.name}</td>
-                  <td className="py-3 px-4 text-presales-text">{art.artifact_type}</td>
-                  <td className="py-3 px-4 text-presales-text">{art.category}</td>
-                  <td className="py-3 px-4 text-presales-text">{art.industry}</td>
-                  <td className="py-3 px-4 text-presales-text">{art.version}</td>
-                  <td className="py-3 px-4">
+                  <td className="py-3 px-2 text-presales-text text-sm font-medium">{art.artifact_id}</td>
+                  <td className="py-3 px-2 text-presales-text font-medium break-words">{art.name}</td>
+                  <td className="py-3 px-2 text-presales-text">{art.artifact_type}</td>
+                  <td className="py-3 px-2 text-presales-text">{art.category}</td>
+                  <td className="py-3 px-2 text-presales-text">{art.industry}</td>
+                  <td className="py-3 px-2 text-presales-text">{art.version}</td>
+                  <td className="py-3 px-2">
                     <span className="px-3 py-1 bg-presales-light-green text-presales-dark-green rounded-full text-sm font-medium">
                       {art.usage_count}
                     </span>
                   </td>
-                  <td className="py-3 px-4 text-center">
+                  <td className="py-3 px-2 text-center whitespace-nowrap">
                     <Link
                       href={`/artifacts/${art.id}`}
-                      className="inline-flex items-center gap-2 px-3 py-1 rounded-lg text-presales-dark-green hover:bg-presales-light-green transition-all duration-200"
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-presales-dark-green hover:bg-presales-light-green transition-all duration-200"
                     >
                       <Eye size={16} />
                       <span className="text-sm">View</span>
                     </Link>
+                    {canDelete && (
+                      <button
+                        onClick={() => handleDeleteArtifact(art)}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-red-600 hover:bg-red-50 transition-all duration-200"
+                      >
+                        <Trash2 size={16} />
+                        <span className="text-sm">Delete</span>
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))
