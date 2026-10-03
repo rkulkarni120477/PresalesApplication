@@ -11,6 +11,7 @@ from pathlib import Path
 import shutil
 import zipfile
 import tempfile
+from fastapi.responses import FileResponse
 
 from database import get_db, init_db
 from models import User, Role, Opportunity, Artifact, OpportunityArtifactMapping, OpportunityCollaborator, AuditLog
@@ -966,10 +967,30 @@ async def list_artifacts(
     if industry:
         query = query.filter(Artifact.industry == industry)
     if search:
-        query = query.filter(Artifact.name.ilike(f"%{search}%"))
+        # Semantic search in the vector DB, ranked by best-matching chunk
+        best = {}
+        for r in vector_db_service.search(search, n_results=100):
+            aid = (r.get("metadata") or {}).get("artifact_id")
+            if aid and r["similarity_score"] > best.get(aid, -1e9):
+                best[aid] = r["similarity_score"]
+        candidates = query.all()
+        by_key = {str(a.id): a for a in candidates}
+        by_key.update({a.artifact_id: a for a in candidates})
+        ranked = []
+        for k, _ in sorted(best.items(), key=lambda kv: -kv[1]):
+            if k in by_key and by_key[k] not in ranked:
+                ranked.append(by_key[k])
+        ranked_ids = {a.id for a in ranked}
+        term = search.lower()
+        # Artifacts not indexed in the vector DB still match on keyword
+        for a in candidates:
+            if a.id not in ranked_ids and any(
+                term in (v or "").lower() for v in (a.name, a.description, a.summary, a.category, a.industry)
+            ):
+                ranked.append(a)
+        return ranked[skip:skip + limit]
 
-    artifacts = query.offset(skip).limit(limit).all()
-    return artifacts
+    return query.offset(skip).limit(limit).all()
 
 
 @app.get("/api/artifacts/{art_id}", response_model=ArtifactResponse)
@@ -1093,6 +1114,63 @@ async def create_artifact(
 
     return artifact
 
+
+@app.get("/api/artifacts/{art_id}/download")
+async def download_artifact_file(
+    art_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    artifact = db.query(Artifact).filter(Artifact.id == art_id).first()
+    if not artifact:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    if not artifact.source_reference or not Path(artifact.source_reference).is_file():
+        raise HTTPException(status_code=404, detail="No file available for this artifact")
+    path = Path(artifact.source_reference)
+    return FileResponse(path, filename=f"{artifact.name}{path.suffix}")
+
+
+@app.delete("/api/artifacts/{art_id}")
+async def delete_artifact(
+    art_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    role = db.query(Role).filter(Role.id == current_user.role_id).first()
+    if not role or role.name != "Artifact Repository Owner":
+        raise HTTPException(status_code=403, detail="Only Artifact Repository Owner can delete artifacts")
+
+    artifact = db.query(Artifact).filter(Artifact.id == art_id).first()
+    if not artifact:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+
+    db.query(OpportunityArtifactMapping).filter(
+        OpportunityArtifactMapping.artifact_id == artifact.id
+    ).delete(synchronize_session=False)
+
+    try:
+        vector_db_service.delete_artifact(artifact.artifact_id)
+        vector_db_service.delete_artifact(str(artifact.id))
+    except Exception as e:
+        logger.warning(f"Could not remove vectors for {artifact.artifact_id}: {e}")
+
+    if artifact.source_reference:
+        try:
+            Path(artifact.source_reference).unlink(missing_ok=True)
+        except Exception as e:
+            logger.warning(f"Could not remove file for {artifact.artifact_id}: {e}")
+
+    db.add(AuditLog(
+        user_id=current_user.id,
+        role=role.name,
+        action="delete_artifact",
+        entity="Artifact",
+        entity_id=artifact.id,
+        new_value={"message": f"Deleted artifact {artifact.artifact_id} ({artifact.name})"}
+    ))
+    db.delete(artifact)
+    db.commit()
+    return {"message": "Artifact deleted successfully"}
 
 # Opportunity-Artifact Mapping endpoints
 @app.get("/api/opportunities/{opp_id}/artifacts", response_model=List[ArtifactResponse])

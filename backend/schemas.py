@@ -124,6 +124,7 @@ class ArtifactResponse(ArtifactBase):
     owner_id: int
     status: str
     usage_count: int
+    source_reference: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

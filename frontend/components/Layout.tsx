@@ -49,7 +49,11 @@ export default function Layout({ children }: LayoutProps) {
   }
 
   const isAdmin = user.role === 'Administrator';
-  const filteredNavigation = navigation.filter(item => !item.admin || isAdmin);
+  const isRepoOwner = user.role === 'Artifact Repository Owner';
+  const hiddenForRepoOwner = ['/opportunities', '/mapping'];
+  const filteredNavigation = navigation.filter(item =>
+    (!item.admin || isAdmin) && !(isRepoOwner && hiddenForRepoOwner.includes(item.href))
+  );
 
   return (
     <div className="flex h-screen bg-presales-page-bg">
