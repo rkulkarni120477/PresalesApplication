@@ -147,7 +147,13 @@ export default function OpportunityDetailsPage() {
   };
 
   const handleCompleteAssignment = async () => {
-    if (!opportunity || !confirm('Are you sure you want to mark this assignment as complete?')) return;
+    if (!opportunity) return;
+
+    const confirmMessage = user?.role === 'Presales Solution Member'
+      ? 'Is everything uploaded from your side for this opportunity?'
+      : 'Are you sure you want to mark this as complete?';
+
+    if (!confirm(confirmMessage)) return;
 
     setCompletionLoading(true);
     try {
@@ -309,33 +315,37 @@ export default function OpportunityDetailsPage() {
             </button>
           )}
 
-          {/* Edit/Archive/Delete buttons - available to Sales Owner, Solution Owner, and Solution Member */}
+          {/* Edit button - available to Sales Owner, Solution Owner, and Solution Member */}
           {(user?.role === 'Sales Owner' || user?.role === 'Presales Solution Owner' || user?.role === 'Presales Solution Member') && (
-            <>
-              <button
-                onClick={() => setShowEditModal(true)}
-                className="inline-flex items-center gap-2 px-4 py-2 text-presales-dark-green border border-presales-border rounded-lg hover:bg-presales-light-green transition-all duration-200"
-              >
-                <Edit size={16} />
-                Edit
-              </button>
-              <button
-                onClick={handleArchive}
-                className="inline-flex items-center gap-2 px-4 py-2 text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-all duration-200"
-              >
-                <Archive size={16} />
-                Archive
-              </button>
-              {user?.role === 'Sales Owner' && (
-                <button
-                  onClick={handleDelete}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-all duration-200"
-                >
-                  <Trash2 size={16} />
-                  Delete
-                </button>
-              )}
-            </>
+            <button
+              onClick={() => setShowEditModal(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 text-presales-dark-green border border-presales-border rounded-lg hover:bg-presales-light-green transition-all duration-200"
+            >
+              <Edit size={16} />
+              Edit
+            </button>
+          )}
+
+          {/* Archive button - only for Solution Owner and Presales Administrator */}
+          {(user?.role === 'Presales Solution Owner' || user?.role === 'Presales Administrator') && (
+            <button
+              onClick={handleArchive}
+              className="inline-flex items-center gap-2 px-4 py-2 text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-all duration-200"
+            >
+              <Archive size={16} />
+              Archive
+            </button>
+          )}
+
+          {/* Delete button - only for Sales Owner */}
+          {user?.role === 'Sales Owner' && (
+            <button
+              onClick={handleDelete}
+              className="inline-flex items-center gap-2 px-4 py-2 text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-all duration-200"
+            >
+              <Trash2 size={16} />
+              Delete
+            </button>
           )}
 
           {/* Complete Assignment button - available to Solution Owner and Solution Member */}

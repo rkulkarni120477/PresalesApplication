@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, Query, UploadFile, 
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import List, Optional
 import uuid
 import logging
@@ -733,58 +733,68 @@ async def complete_opportunity(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    opportunity = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
-    if not opportunity:
-        raise HTTPException(status_code=404, detail="Opportunity not found")
+    try:
+        opportunity = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
+        if not opportunity:
+            raise HTTPException(status_code=404, detail="Opportunity not found")
 
-    # Get current user's role
-    current_user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
-    current_role_name = current_user_role.name if current_user_role else None
+        # Get current user's role
+        current_user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
+        current_role_name = current_user_role.name if current_user_role else None
 
-    # Verify user has permission to complete this opportunity
-    if current_role_name == "Presales Solution Member":
-        # Can complete if assigned to them OR if they're a collaborator
-        is_assigned = opportunity.assigned_to_id == current_user.id
-        is_collaborator = db.query(OpportunityCollaborator).filter(
-            OpportunityCollaborator.opportunity_id == opportunity.id,
-            OpportunityCollaborator.user_id == current_user.id
-        ).first() is not None
+        logger.info(f"User {current_user.id} ({current_role_name}) attempting to complete opportunity {opp_id}")
 
-        if not (is_assigned or is_collaborator):
-            raise HTTPException(status_code=403, detail="You can only complete opportunities assigned to you")
-        opportunity.completion_status = "member_completed"
+        # Verify user has permission to complete this opportunity
+        if current_role_name == "Presales Solution Member":
+            # Can complete if assigned to them OR if they're a collaborator
+            is_assigned = opportunity.assigned_to_id == current_user.id
+            is_collaborator = db.query(OpportunityCollaborator).filter(
+                OpportunityCollaborator.opportunity_id == opportunity.id,
+                OpportunityCollaborator.user_id == current_user.id
+            ).first() is not None
 
-    elif current_role_name == "Presales Solution Owner":
-        # Can complete if assigned to them
-        if opportunity.assigned_to_id != current_user.id:
-            raise HTTPException(status_code=403, detail="You can only complete opportunities assigned to you")
-        opportunity.completion_status = "owner_completed"
+            logger.info(f"Solution Member: assigned={is_assigned}, collaborator={is_collaborator}")
 
-    elif current_role_name == "Presales Administrator":
-        # Can only complete if they assigned it
-        if opportunity.assigned_by_id != current_user.id:
-            raise HTTPException(status_code=403, detail="You can only complete opportunities you assigned")
-        opportunity.completion_status = "admin_completed"
+            if not (is_assigned or is_collaborator):
+                raise HTTPException(status_code=403, detail="You can only complete opportunities assigned to you")
+            opportunity.completion_status = "member_completed"
 
-    elif current_role_name == "Sales Owner":
-        # Can only complete if they created it
-        if opportunity.owner_id != current_user.id:
-            raise HTTPException(status_code=403, detail="You can only complete opportunities you created")
-        opportunity.completion_status = "completed"
+        elif current_role_name == "Presales Solution Owner":
+            # Can complete if assigned to them
+            if opportunity.assigned_to_id != current_user.id:
+                raise HTTPException(status_code=403, detail="You can only complete opportunities assigned to you")
+            opportunity.completion_status = "owner_completed"
 
-    else:
-        raise HTTPException(status_code=403, detail="You don't have permission to complete this opportunity")
+        elif current_role_name == "Presales Administrator":
+            # Can only complete if they assigned it
+            if opportunity.assigned_by_id != current_user.id:
+                raise HTTPException(status_code=403, detail="You can only complete opportunities you assigned")
+            opportunity.completion_status = "admin_completed"
 
-    opportunity.completed_by_id = current_user.id
-    opportunity.completed_at = datetime.utcnow()
-    db.commit()
+        elif current_role_name == "Sales Owner":
+            # Can only complete if they created it
+            if opportunity.owner_id != current_user.id:
+                raise HTTPException(status_code=403, detail="You can only complete opportunities you created")
+            opportunity.completion_status = "completed"
 
-    logger.info(f"Opportunity {opp_id} marked as complete by {current_user.first_name} {current_user.last_name} with status: {opportunity.completion_status}")
+        else:
+            raise HTTPException(status_code=403, detail="You don't have permission to complete this opportunity")
 
-    return {
-        "message": "Opportunity marked as complete",
-        "opportunity": enrich_opportunity(opportunity)
-    }
+        opportunity.completed_by_id = current_user.id
+        opportunity.completed_at = datetime.utcnow()
+        db.commit()
+
+        logger.info(f"Opportunity {opp_id} marked as complete by {current_user.first_name} {current_user.last_name} with status: {opportunity.completion_status}")
+
+        return {
+            "message": "Opportunity marked as complete",
+            "opportunity": enrich_opportunity(opportunity)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error completing opportunity {opp_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error completing opportunity: {str(e)}")
 
 
 @app.delete("/api/opportunities/{opp_id}")
