@@ -277,6 +277,40 @@ async def get_opportunity(
     return enrich_opportunity(opportunity)
 
 
+@app.get("/api/opportunities/{opp_id}/team")
+async def get_opportunity_team(
+    opp_id: int,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    # Reuse the detail endpoint's access rules
+    await get_opportunity(opp_id, db, current_user)
+    opportunity = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
+
+    users = []
+    seen = set()
+
+    def add(user_id):
+        if not user_id or user_id in seen:
+            return
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return
+        seen.add(user_id)
+        role = db.query(Role).filter(Role.id == user.role_id).first()
+        users.append({
+            "role": role.name if role else None,
+            "name": f"{user.first_name} {user.last_name}".strip(),
+            "email": user.email,
+        })
+
+    add(opportunity.owner_id)
+    add(opportunity.assigned_by_id)
+    add(opportunity.assigned_to_id)
+    for c in opportunity.collaborators:
+        add(c.user_id)
+    return users
+
 @app.post("/api/opportunities", response_model=OpportunityResponse)
 async def create_opportunity(
     name: str = Form(...),
@@ -707,16 +741,34 @@ async def add_collaborator(
         OpportunityCollaborator.user_id == collaborator_user_id
     ).first()
 
+    reassigned = False
     if existing:
-        raise HTTPException(status_code=400, detail="User is already a collaborator on this opportunity")
+        # A member who already closed their task can be re-assigned
+        if opportunity.completion_status == "member_completed" and opportunity.completed_by_id == collaborator_user_id:
+            reassigned = True
+        else:
+            raise HTTPException(status_code=400, detail="User is already a collaborator on this opportunity")
 
-    # Add collaborator
-    collaborator = OpportunityCollaborator(
-        opportunity_id=opp_id,
-        user_id=collaborator_user_id,
-        added_by_id=current_user.id
-    )
-    db.add(collaborator)
+    if not existing:
+        db.add(OpportunityCollaborator(
+            opportunity_id=opp_id,
+            user_id=collaborator_user_id,
+            added_by_id=current_user.id
+        ))
+    # Reopen the task for the member if it was previously closed
+    if opportunity.completion_status == "member_completed":
+        opportunity.completion_status = "open"
+        opportunity.completed_by_id = None
+        opportunity.completed_at = None
+    db.add(AuditLog(
+        user_id=current_user.id,
+        role=current_role_name,
+        action="member_reassigned" if reassigned else "member_assigned",
+        entity="Opportunity",
+        entity_id=opportunity.id,
+        opportunity_id=opportunity.id,
+        new_value={"message": f"{current_user.first_name} {current_user.last_name} {'re-assigned' if reassigned else 'assigned'} {collaborator_user.first_name} {collaborator_user.last_name}"}
+    ))
     db.commit()
 
     logger.info(f"Added {collaborator_user.first_name} {collaborator_user.last_name} as collaborator to opportunity {opp_id}")
@@ -758,12 +810,34 @@ async def complete_opportunity(
             if not (is_assigned or is_collaborator):
                 raise HTTPException(status_code=403, detail="You can only complete opportunities assigned to you")
             opportunity.completion_status = "member_completed"
+            db.add(AuditLog(
+                user_id=current_user.id,
+                role=current_role_name,
+                action="member_task_completed",
+                entity="Opportunity",
+                entity_id=opportunity.id,
+                opportunity_id=opportunity.id,
+                new_value={"message": f"{current_user.first_name} {current_user.last_name} completed their task"}
+            ))
 
         elif current_role_name == "Presales Solution Owner":
             # Can complete if assigned to them
             if opportunity.assigned_to_id != current_user.id:
                 raise HTTPException(status_code=403, detail="You can only complete opportunities assigned to you")
             opportunity.completion_status = "owner_completed"
+            # Ownership returns to the user who created the opportunity
+            creator = db.query(User).filter(User.id == opportunity.owner_id).first()
+            if creator and creator.id != current_user.id:
+                opportunity.assigned_to_id = creator.id
+                db.add(AuditLog(
+                    user_id=current_user.id,
+                    role=current_role_name,
+                    action="assignment_completed",
+                    entity="Opportunity",
+                    entity_id=opportunity.id,
+                    opportunity_id=opportunity.id,
+                    new_value={"message": f"{current_user.first_name} {current_user.last_name} completed the assignment; ownership returned to {creator.first_name} {creator.last_name}"}
+                ))
 
         elif current_role_name == "Presales Administrator":
             # Can only complete if they assigned it
@@ -795,6 +869,53 @@ async def complete_opportunity(
     except Exception as e:
         logger.error(f"Error completing opportunity {opp_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error completing opportunity: {str(e)}")
+
+
+@app.get("/api/opportunities/{opp_id}/activity-logs")
+async def get_opportunity_activity_logs(
+    opp_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    opportunity = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
+    if not opportunity:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    role = db.query(Role).filter(Role.id == current_user.role_id).first()
+    role_name = role.name if role else None
+    if role_name != "Presales Solution Owner" or opportunity.assigned_to_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    logs = db.query(AuditLog).filter(
+        AuditLog.opportunity_id == opp_id,
+        AuditLog.action.in_(["member_task_completed", "assignment_completed", "member_assigned", "member_reassigned"])
+    ).order_by(AuditLog.timestamp.desc()).all()
+
+    result = []
+    # Closures recorded before logging existed: synthesize an entry from the completion fields
+    if opportunity.completion_status == "member_completed" and opportunity.completed_by_id and not any(l.action == "member_task_completed" for l in logs):
+        member = db.query(User).filter(User.id == opportunity.completed_by_id).first()
+        if member:
+            name = f"{member.first_name} {member.last_name}".strip()
+            result.append({
+                "id": 0,
+                "timestamp": opportunity.completed_at or opportunity.updated_at,
+                "action": "member_task_completed",
+                "user_name": name,
+                "role": "Presales Solution Member",
+                "message": f"{name} completed their task",
+            })
+    return result + [
+        {
+            "id": log.id,
+            "timestamp": log.timestamp,
+            "action": log.action,
+            "user_name": f"{log.user.first_name} {log.user.last_name}".strip() if log.user else None,
+            "role": log.role,
+            "message": (log.new_value or {}).get("message", log.action),
+        }
+        for log in logs
+    ]
 
 
 @app.delete("/api/opportunities/{opp_id}")

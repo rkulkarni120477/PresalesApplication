@@ -54,6 +54,8 @@ export default function OpportunityDetailsPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState('');
   const [completionLoading, setCompletionLoading] = useState(false);
+  const [activityLogs, setActivityLogs] = useState<any[]>([]);
+  const [team, setTeam] = useState<any[]>([]);
   const [editFormData, setEditFormData] = useState({
     name: '',
     customer: '',
@@ -67,6 +69,21 @@ export default function OpportunityDetailsPage() {
       loadOpportunity();
     }
   }, [id]);
+
+  useEffect(() => {
+    if (id && opportunity) {
+      apiClient.getOpportunityTeam(Number(id)).then(setTeam).catch((e) => console.error('Failed to load team:', e));
+    }
+  }, [id, opportunity]);
+
+  useEffect(() => {
+    if (id && user?.role === 'Presales Solution Owner' && opportunity) {
+      apiClient
+        .getOpportunityActivityLogs(Number(id))
+        .then(setActivityLogs)
+        .catch((e) => console.error('Failed to load activity logs:', e));
+    }
+  }, [id, user?.role, opportunity]);
 
   useEffect(() => {
     if (showAssignModal) {
@@ -507,6 +524,51 @@ export default function OpportunityDetailsPage() {
           </div>
         </div>
       </div>
+
+      <div className="card">
+        <h2 className="text-xl font-bold text-presales-text mb-4">👥 Team Involved</h2>
+        {team.length === 0 ? (
+          <p className="text-presales-text-secondary text-sm">No team members yet.</p>
+        ) : (
+          <table className="w-full text-sm text-left">
+            <thead>
+              <tr className="text-presales-text-secondary border-b">
+                <th className="py-2 pr-4">Role</th>
+                <th className="py-2 pr-4">Member Name</th>
+                <th className="py-2">Member Email</th>
+              </tr>
+            </thead>
+            <tbody>
+              {team.map((m, i) => (
+                <tr key={i} className="border-b last:border-0">
+                  <td className="py-2 pr-4">{m.role}</td>
+                  <td className="py-2 pr-4">{m.name}</td>
+                  <td className="py-2">{m.email}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      {user?.role === 'Presales Solution Owner' && (
+        <div className="card">
+          <h2 className="text-xl font-bold text-presales-text mb-4">🕒 Activity Log</h2>
+          {activityLogs.length === 0 ? (
+            <p className="text-presales-text-secondary text-sm">No activity yet.</p>
+          ) : (
+            <ul className="space-y-3">
+              {activityLogs.map((log) => (
+                <li key={log.id} className="p-3 bg-presales-page-bg rounded-lg">
+                  <p className="text-presales-text">{log.message}</p>
+                  <p className="text-xs text-presales-text-secondary mt-1">
+                    {log.user_name} ({log.role}) · {new Date(log.timestamp + 'Z').toLocaleString()}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {/* Attachments Section */}
       <div className="card">

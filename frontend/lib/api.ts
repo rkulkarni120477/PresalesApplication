@@ -106,6 +106,16 @@ class APIClient {
     return response.data;
   }
 
+  async getOpportunityActivityLogs(opportunityId: number) {
+    const response = await this.client.get(`/api/opportunities/${opportunityId}/activity-logs`);
+    return response.data;
+  }
+
+  async getOpportunityTeam(opportunityId: number) {
+    const response = await this.client.get(`/api/opportunities/${opportunityId}/team`);
+    return response.data;
+  }
+
   async getOpportunity(id: number) {
     const response = await this.client.get(`/api/opportunities/${id}`);
     return response.data;
