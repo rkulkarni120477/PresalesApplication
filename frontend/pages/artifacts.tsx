@@ -125,6 +125,8 @@ export default function ArtifactsPage() {
     'Estimation',
     'Statement of Work',
     'RFP Response',
+    'Study Reference Document',
+    'Business Reference Document',
     'Business Case',
     'Implementation Plan',
   ];
