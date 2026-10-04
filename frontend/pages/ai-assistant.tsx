@@ -1,81 +1,116 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { apiClient } from '@/lib/api';
-import { Send, Loader, AlertCircle } from 'lucide-react';
+import { Send, Loader, AlertCircle, Download, FileText } from 'lucide-react';
+
+interface Excerpt {
+  text: string;
+  page?: number;
+  similarity_score: number;
+}
+
+interface MatchedArtifact {
+  id: number;
+  artifact_id: string;
+  name: string;
+  artifact_type?: string;
+  industry?: string;
+  description?: string;
+  summary?: string;
+  has_file: boolean;
+  relevance: number;
+  match_reasons: string[];
+  matched_terms: string[];
+  excerpts: Excerpt[];
+}
+
+interface ResultGroup {
+  type: string;
+  artifacts: MatchedArtifact[];
+}
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
-  isAiGenerated?: boolean;
+  groups?: ResultGroup[];
   timestamp: Date;
 }
 
+const GREETING =
+  'Is there anything specific in the repository you are searching? How may I assist you?';
+
 export default function AIAssistantPage() {
   const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'assistant',
-      content: 'Hello! I\'m your AI Assistant. I can help you with analyzing opportunities, recommending artifacts, generating summaries, and answering questions about your presales operations.',
-      isAiGenerated: false,
-      timestamp: new Date(),
-    }
+    { role: 'assistant', content: GREETING, timestamp: new Date() },
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [aiAvailable, setAiAvailable] = useState(true);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
-  const suggestedQuestions = [
-    'Analyze the first opportunity for me',
-    'Recommend artifacts for recent opportunities',
-    'What are the most reused artifacts?',
-    'Generate a summary for the first opportunity',
-    'Show opportunities by industry',
-  ];
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, loading]);
+
+  const handleDownload = async (artifact: MatchedArtifact) => {
+    try {
+      const blob = await apiClient.downloadArtifactFile(artifact.id);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = artifact.name;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to download artifact:', error);
+    }
+  };
 
   const handleSendMessage = async (message: string) => {
-    if (!message.trim()) return;
+    const query = message.trim();
+    if (!query) return;
 
-    // Add user message
-    const userMessage: Message = {
-      role: 'user',
-      content: message,
-      timestamp: new Date(),
-    };
-    setMessages(prev => [...prev, userMessage]);
+    setMessages(prev => [...prev, { role: 'user', content: query, timestamp: new Date() }]);
     setInput('');
     setLoading(true);
 
     try {
-      // For now, provide demo responses
-      let response = '';
+      const data = await apiClient.assistantSearch(query);
+      setAiAvailable(true);
 
-      if (message.toLowerCase().includes('analyze')) {
-        response = 'I\'ve analyzed the top opportunities in your pipeline. The main focus areas are cloud modernization (35% of opportunities) and AI/ML implementations (40%). Key risks include timeline constraints and resource allocation. Recommendation: Prioritize opportunities with existing technical partnerships.';
-      } else if (message.toLowerCase().includes('recommend')) {
-        response = 'Based on recent opportunities, I recommend these artifacts: 1) Cloud Migration Proposal - applicable to 8 opportunities, 2) Enterprise AI Architecture - matches 5 AI-focused opportunities, 3) Zero Trust Security - relevant for 6 regulated industries. These have the highest relevance scores.';
-      } else if (message.toLowerCase().includes('reused')) {
-        response = 'The most reused artifacts are: 1) Banking Cloud Reference Architecture (8 uses), 2) Enterprise AI Architecture (7 uses), 3) API Integration Architecture (6 uses). These are core building blocks for your presales processes.';
-      } else if (message.toLowerCase().includes('summary')) {
-        response = 'Here\'s a comprehensive summary: GlobalBank Digital Transformation is a $5M opportunity in the Finance sector. Key challenge: Legacy systems. Requirements: Cloud migration, API modernization, and analytics platform. Proposed solution: AWS-based microservices architecture. Probability: 75%. Status: Solutioning. Next steps: Technical architecture review and vendor evaluation.';
-      } else if (message.toLowerCase().includes('industry')) {
-        response = 'Opportunities by industry distribution: Finance (25%), Technology (20%), Healthcare (15%), Manufacturing (15%), Retail (15%), Other (10%). Finance and Technology sectors represent your largest opportunities pool.';
+      if (!data.total) {
+        setMessages(prev => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: `I couldn't find any artifacts matching "${query}". Try different keywords, or tell me more about what you need.`,
+            timestamp: new Date(),
+          },
+        ]);
       } else {
-        response = 'I can help you with various presales queries. Try asking me to: analyze opportunities, recommend artifacts, show statistics, generate summaries, or answer questions about your pipeline. What would you like to know?';
+        const summary = (data.groups as ResultGroup[])
+          .map(g => `${g.artifacts.length} ${g.type}${g.artifacts.length > 1 ? 's' : ''}`)
+          .join(', ');
+        setMessages(prev => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: `I found ${data.total} matching artifact${data.total > 1 ? 's' : ''} for "${query}" (${summary}). Here is what the repository contains, ordered by type:`,
+            groups: data.groups,
+            timestamp: new Date(),
+          },
+          { role: 'assistant', content: 'Is there anything else you would like to look for?', timestamp: new Date() },
+        ]);
       }
-
-      const assistantMessage: Message = {
-        role: 'assistant',
-        content: response,
-        isAiGenerated: true,
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
-      console.error('Failed to get AI response:', error);
-      const errorMessage: Message = {
-        role: 'assistant',
-        content: 'Sorry, I encountered an error processing your request. Please try again.',
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, errorMessage]);
+      console.error('Failed to search repository:', error);
+      setMessages(prev => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: 'Sorry, I encountered an error searching the repository. Please try again.',
+          timestamp: new Date(),
+        },
+      ]);
       setAiAvailable(false);
     } finally {
       setLoading(false);
@@ -87,31 +122,100 @@ export default function AIAssistantPage() {
       {!aiAvailable && (
         <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg flex items-start gap-3">
           <AlertCircle size={20} className="text-yellow-600 mt-0.5 flex-shrink-0" />
-          <p className="text-sm text-yellow-700">AI service is currently unavailable. Core platform functionality remains available.</p>
+          <p className="text-sm text-yellow-700">Repository search is currently unavailable. Core platform functionality remains available.</p>
         </div>
       )}
 
-      {/* Messages Area */}
       <div className="flex-1 overflow-y-auto card mb-4 space-y-4">
         {messages.map((msg, idx) => (
-          <div
-            key={idx}
-            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
+          <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
-              className={`max-w-2xl p-4 rounded-lg ${
+              className={`${msg.groups ? 'max-w-4xl w-full' : 'max-w-2xl'} p-4 rounded-lg ${
                 msg.role === 'user'
                   ? 'bg-presales-dark-green text-white'
                   : 'bg-presales-light-green text-presales-text border border-presales-border'
               }`}
             >
               <p className="text-sm">{msg.content}</p>
-              {msg.isAiGenerated && (
-                <p className="text-xs mt-2 opacity-70">🤖 AI Generated</p>
-              )}
-              <p className="text-xs mt-2 opacity-50">
-                {msg.timestamp.toLocaleTimeString()}
-              </p>
+
+              {msg.groups?.map(group => (
+                <div key={group.type} className="mt-4">
+                  <h3 className="text-sm font-semibold mb-2">
+                    {group.type} ({group.artifacts.length})
+                  </h3>
+                  <div className="space-y-3">
+                    {group.artifacts.map(art => (
+                      <div key={art.id} className="bg-white border border-presales-border rounded-lg p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-2 min-w-0">
+                            <FileText size={18} className="mt-0.5 flex-shrink-0" />
+                            <div className="min-w-0">
+                              <a
+                                href={`/artifacts/${art.id}`}
+                                className="text-sm font-medium underline break-words"
+                              >
+                                {art.name}
+                              </a>
+                              <p className="text-xs opacity-70">
+                                {[art.artifact_id, art.artifact_type, art.industry].filter(Boolean).join(' • ')}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className="text-xs px-2 py-0.5 rounded bg-presales-light-green border border-presales-border">
+                              {Math.round(art.relevance * 100)}% match
+                            </span>
+                            {art.has_file && (
+                              <button
+                                onClick={() => handleDownload(art)}
+                                title="Download"
+                                className="p-1 hover:bg-presales-light-green rounded"
+                              >
+                                <Download size={16} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="mt-2 text-xs bg-presales-light-green border border-presales-border rounded p-2">
+                          <p className="font-medium">Why it matched</p>
+                          <ul className="list-disc ml-4 mt-1 space-y-0.5">
+                            {art.match_reasons.map((r, i) => (
+                              <li key={i}>{r}</li>
+                            ))}
+                          </ul>
+                          {art.matched_terms.length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {art.matched_terms.map(term => (
+                                <span key={term} className="px-1.5 py-0.5 rounded bg-yellow-200 text-yellow-900">
+                                  {term}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {(art.summary || art.description) && (
+                          <p className="text-xs mt-2">{art.summary || art.description}</p>
+                        )}
+
+                        {art.excerpts.length > 0 && (
+                          <div className="mt-2 space-y-2">
+                            <p className="text-xs font-medium">Relevant content from the document:</p>
+                            {art.excerpts.map((ex, i) => (
+                              <blockquote key={i} className="text-xs border-l-2 border-presales-border pl-2 opacity-90 whitespace-pre-wrap">
+                                {ex.text}
+                                {ex.page ? <span className="opacity-60"> (page {ex.page})</span> : null}
+                              </blockquote>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              <p className="text-xs mt-2 opacity-50">{msg.timestamp.toLocaleTimeString()}</p>
             </div>
           </div>
         ))}
@@ -119,38 +223,20 @@ export default function AIAssistantPage() {
           <div className="flex justify-start">
             <div className="bg-presales-light-green text-presales-text p-4 rounded-lg border border-presales-border flex items-center gap-2">
               <Loader size={16} className="animate-spin" />
-              <span className="text-sm">Thinking...</span>
+              <span className="text-sm">Searching the repository...</span>
             </div>
           </div>
         )}
+        <div ref={bottomRef} />
       </div>
 
-      {/* Suggested Questions */}
-      {messages.length === 1 && (
-        <div className="mb-4">
-          <p className="text-sm font-medium text-presales-text mb-2">Suggested Questions:</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {suggestedQuestions.map((q, idx) => (
-              <button
-                key={idx}
-                onClick={() => handleSendMessage(q)}
-                className="text-left p-3 border border-presales-border rounded-lg hover:bg-presales-light-green transition-all duration-200 text-sm text-presales-text"
-              >
-                {q}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Input Area */}
       <div className="card flex gap-2">
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyPress={(e) => e.key === 'Enter' && handleSendMessage(input)}
-          placeholder="Ask me anything about your presales operations..."
+          onKeyDown={(e) => e.key === 'Enter' && handleSendMessage(input)}
+          placeholder="Describe what you are looking for in the repository..."
           className="flex-1 border border-presales-border rounded-lg px-4 py-2"
           disabled={loading}
         />

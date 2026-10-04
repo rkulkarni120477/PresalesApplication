@@ -1,3 +1,4 @@
+import re
 from fastapi import FastAPI, Depends, HTTPException, status, Query, UploadFile, File, Form, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -1275,6 +1276,148 @@ async def unmap_artifact(
     return {"message": "Artifact unmapped"}
 
 
+ASSISTANT_STOPWORDS = {"the","and","for","are","you","any","anything","have","has","with","from","that","this","what","which","where","how","can","about","there","our","your","their","does","did","was","were","will","would","could","should","into","some","all","show","find","look","looking","search","need","want","please","repository","repo","artifact","artifacts","document","documents"}
+
+ASSISTANT_STOPWORDS = {"the","and","for","are","you","any","anything","have","has","with","from","that","this","what","which","where","how","can","about","there","our","your","their","does","did","was","were","will","would","could","should","into","some","all","show","find","look","looking","search","need","want","please","repository","repo","artifact","artifacts","document","documents"}
+
+ASSISTANT_TYPE_ORDER = [
+    "PowerPoint Presentation",
+    "Case Study",
+    "Word Document",
+    "PDF Document",
+    "Spreadsheet",
+    "Other",
+]
+
+
+def classify_artifact(artifact: Artifact) -> str:
+    """Map an artifact to a display group used to order assistant results."""
+    ext = Path(artifact.source_reference or artifact.name or "").suffix.lower()
+    if not ext:
+        ext = Path(artifact.name or "").suffix.lower()
+    text = f"{artifact.name or ''} {artifact.artifact_type or ''} {artifact.category or ''}".lower()
+
+    if ext in (".ppt", ".pptx") or "presentation" in text or "powerpoint" in text:
+        return "PowerPoint Presentation"
+    if "case study" in text or "case-study" in text or "casestudy" in text:
+        return "Case Study"
+    if ext in (".doc", ".docx"):
+        return "Word Document"
+    if ext == ".pdf":
+        return "PDF Document"
+    if ext in (".xls", ".xlsx", ".csv"):
+        return "Spreadsheet"
+    return "Other"
+
+
+@app.post("/api/ai/assistant-search")
+async def assistant_search(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    """Contextual vector search returning matching artifacts grouped by type."""
+    query = (payload.get("query") or "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Query is required")
+
+    chunks = vector_db_service.search(query, n_results=30)
+
+    terms = [t for t in re.findall(r"[a-z0-9]+", query.lower())
+             if len(t) > 2 and t not in ASSISTANT_STOPWORDS]
+
+    def explain(artifact, key_chunks):
+        fields = {
+            "name": artifact.name, "description": artifact.description,
+            "summary": artifact.summary, "type": artifact.artifact_type,
+            "category": artifact.category, "industry": artifact.industry,
+            "use cases": artifact.applicable_use_cases,
+        }
+        field_hits = {}
+        for label, value in fields.items():
+            low = str(value or "").lower()
+            hit = [t for t in terms if t in low]
+            if hit:
+                field_hits[label] = hit
+        content_terms = sorted({t for c in key_chunks for t in terms if t in c["text"].lower()})
+        reasons = []
+        if key_chunks:
+            reasons.append(
+                f"Semantically similar content found in {len(key_chunks)} section(s) of the document"
+                + (f"; the text mentions: {', '.join(content_terms)}" if content_terms else "")
+            )
+        for label, hit in field_hits.items():
+            reasons.append(f"Its {label} contains: {', '.join(hit)}")
+        matched = sorted(set(content_terms) | {t for h in field_hits.values() for t in h})
+        return reasons, matched
+
+    per_artifact = {}
+    for chunk in chunks:
+        key = str((chunk.get("metadata") or {}).get("artifact_id") or "")
+        if key:
+            per_artifact.setdefault(key, []).append(chunk)
+
+    artifacts = db.query(Artifact).all()
+    by_key = {str(a.id): a for a in artifacts}
+    by_key.update({a.artifact_id: a for a in artifacts})
+
+    def build(artifact, key_chunks, relevance):
+        reasons, matched = explain(artifact, key_chunks)
+        if not reasons:
+            return None
+        return {
+            "id": artifact.id,
+            "artifact_id": artifact.artifact_id,
+            "name": artifact.name,
+            "artifact_type": artifact.artifact_type,
+            "category": classify_artifact(artifact),
+            "industry": artifact.industry,
+            "description": artifact.description,
+            "summary": artifact.summary,
+            "has_file": bool(artifact.source_reference),
+            "relevance": round(relevance, 3),
+            "match_reasons": reasons,
+            "matched_terms": matched,
+            "excerpts": [
+                {
+                    "text": c["text"].strip()[:600],
+                    "page": (c.get("metadata") or {}).get("page"),
+                    "similarity_score": round(c["similarity_score"], 3),
+                }
+                for c in key_chunks[:3]
+            ],
+        }
+
+    matches = {}
+    for key, key_chunks in per_artifact.items():
+        artifact = by_key.get(key)
+        if not artifact or artifact.id in matches:
+            continue
+        key_chunks.sort(key=lambda c: -c["similarity_score"])
+        item = build(artifact, key_chunks, max(0.0, key_chunks[0]["similarity_score"]))
+        if item:
+            matches[artifact.id] = item
+
+    # Artifacts not indexed in the vector DB can still match on keywords
+    for artifact in artifacts:
+        if artifact.id in matches or not terms:
+            continue
+        item = build(artifact, [], 0.0)
+        if item:
+            item["relevance"] = round(len(item["matched_terms"]) / len(terms), 3)
+            matches[artifact.id] = item
+
+    groups = []
+    for category in ASSISTANT_TYPE_ORDER:
+        items = sorted(
+            (m for m in matches.values() if m["category"] == category),
+            key=lambda m: -m["relevance"],
+        )
+        if items:
+            groups.append({"type": category, "artifacts": items})
+
+    return {"query": query, "total": len(matches), "groups": groups}
+
+
 # AI endpoints
 @app.post("/api/ai/opportunity-summary")
 async def generate_opportunity_summary(
@@ -1405,3 +1548,4 @@ async def get_audit_logs(
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+

@@ -193,6 +193,11 @@ class APIClient {
     return response.data;
   }
 
+  async assistantSearch(query: string) {
+    const response = await this.client.post('/api/ai/assistant-search', { query });
+    return response.data;
+  }
+
   async updateArtifact(id: number, data: any) {
     const response = await this.client.put(`/api/artifacts/${id}`, data);
     return response.data;
