@@ -25,6 +25,7 @@ from auth import create_access_token, get_current_user, get_current_user_optiona
 from services.bedrock_service import bedrock_service
 from services.vector_db_service import vector_db_service
 from services.document_parser import document_parser
+from services.intelligent_search_service import intelligent_search_service
 from seed import seed_database
 
 app = FastAPI(title="Presales Platform API")
@@ -1029,6 +1030,122 @@ async def search_artifacts(
         raise HTTPException(status_code=500, detail="Error searching artifacts")
 
 
+@app.post("/api/ai/intelligent-search")
+async def intelligent_search(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    """
+    Intelligent search with LLM-powered query refinement and context understanding.
+
+    The LLM will:
+    1. Refine the user's query for better relevance
+    2. Understand intent and extract context
+    3. Provide confidence scores
+
+    Returns artifacts with download paths and confidence scores.
+    """
+    try:
+        user_query = (payload.get("query") or "").strip()
+        if not user_query:
+            raise HTTPException(status_code=400, detail="Query is required")
+
+        context = payload.get("context")
+        n_results = payload.get("limit", 10)
+        artifact_type = payload.get("artifact_type")
+        industry = payload.get("industry")
+
+        # Validate limits
+        n_results = min(max(n_results, 1), 50)
+
+        # Perform intelligent search
+        search_results = intelligent_search_service.intelligent_search(
+            user_query=user_query,
+            context=context,
+            n_results=n_results,
+            artifact_type=artifact_type,
+            industry=industry
+        )
+
+        # Enrich results with database information (name, owner, etc.)
+        enriched_results = []
+        for result in search_results.get("results", []):
+            artifact_id = result.get("artifact_id")
+
+            # Find artifact in database
+            artifact = db.query(Artifact).filter(
+                (Artifact.id == artifact_id) | (Artifact.artifact_id == artifact_id)
+            ).first()
+
+            if artifact:
+                enriched_result = {
+                    **result,
+                    "id": artifact.id,
+                    "artifact_id": artifact.artifact_id,
+                    "name": artifact.name,
+                    "description": artifact.description,
+                    "category": classify_artifact(artifact),
+                    "download_path": f"/api/artifacts/{artifact.id}/download" if artifact.source_reference else None,
+                    "has_file": bool(artifact.source_reference),
+                    "owner": f"{artifact.owner.first_name} {artifact.owner.last_name}".strip() if artifact.owner else None
+                }
+                enriched_results.append(enriched_result)
+
+        return {
+            "user_query": search_results["user_query"],
+            "refined_query": search_results["refined_query"],
+            "intent": search_results["intent"],
+            "search_context": search_results["search_context"],
+            "llm_confidence": search_results["llm_confidence"],
+            "extracted_context": {
+                "key_terms": search_results["extracted_context"].get("key_terms"),
+                "industry": search_results["extracted_context"].get("industry"),
+                "artifact_types": search_results["extracted_context"].get("artifact_types"),
+                "technologies": search_results["extracted_context"].get("technologies"),
+                "alternative_searches": search_results["extracted_context"].get("alternative_searches")
+            },
+            "total_results": len(enriched_results),
+            "results": enriched_results
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in intelligent search: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Search error: {str(e)}")
+
+
+@app.get("/api/ai/search-recommendations")
+async def get_search_recommendations(
+    query: str = Query(..., description="Search query to analyze"),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    """
+    Get LLM-powered recommendations for improving a search query.
+
+    Returns:
+    - Refined query
+    - Detected intent
+    - Key terms
+    - Suggested filters (industry, artifact types, technologies)
+    - Alternative search suggestions
+    """
+    try:
+        query = query.strip()
+        if not query:
+            raise HTTPException(status_code=400, detail="Query is required")
+
+        recommendations = intelligent_search_service.get_search_recommendations(query)
+        return recommendations
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting search recommendations: {e}")
+        raise HTTPException(status_code=500, detail="Error analyzing query")
+
+
 @app.post("/api/artifacts", response_model=ArtifactResponse)
 async def create_artifact(
     name: str = Form(...),
@@ -1315,14 +1432,19 @@ async def assistant_search(
     payload: dict = Body(...),
     db: Session = Depends(get_db)
 ):
-    """Contextual vector search returning matching artifacts grouped by type."""
+    """Contextual vector search with LLM-powered query refinement."""
     query = (payload.get("query") or "").strip()
     if not query:
         raise HTTPException(status_code=400, detail="Query is required")
 
-    chunks = vector_db_service.search(query, n_results=30)
+    # Use intelligent search to refine the query
+    refined_data = intelligent_search_service.refine_and_understand_query(query)
+    refined_query = refined_data.get("refined_query", query)
 
-    terms = [t for t in re.findall(r"[a-z0-9]+", query.lower())
+    # Search with both original and refined queries
+    chunks = vector_db_service.search(refined_query, n_results=30)
+
+    terms = [t for t in re.findall(r"[a-z0-9]+", refined_query.lower())
              if len(t) > 2 and t not in ASSISTANT_STOPWORDS]
 
     def explain(artifact, key_chunks):
@@ -1415,7 +1537,14 @@ async def assistant_search(
         if items:
             groups.append({"type": category, "artifacts": items})
 
-    return {"query": query, "total": len(matches), "groups": groups}
+    return {
+        "query": query,
+        "refined_query": refined_query,
+        "intent": refined_data.get("intent"),
+        "llm_confidence": refined_data.get("confidence", 0),
+        "total": len(matches),
+        "groups": groups
+    }
 
 
 # AI endpoints

@@ -175,3 +175,58 @@ class AIRecommendationResponse(BaseModel):
     artifact_name: str
     relevance_score: float
     reason: str
+
+
+class SearchExcerpt(BaseModel):
+    text: str
+    similarity_score: float
+    page: Optional[int] = None
+
+
+class ExtractedSearchContext(BaseModel):
+    key_terms: Optional[List[str]] = None
+    industry: Optional[str] = None
+    artifact_types: Optional[List[str]] = None
+    technologies: Optional[List[str]] = None
+    alternative_searches: Optional[List[str]] = None
+
+
+class IntelligentSearchResult(BaseModel):
+    id: int
+    artifact_id: str
+    name: str
+    artifact_type: str
+    category: str
+    industry: Optional[str] = None
+    description: Optional[str] = None
+    confidence_score: float
+    max_similarity: float
+    min_similarity: float
+    chunk_count: int
+    pages: List[int]
+    download_path: Optional[str] = None
+    has_file: bool
+    owner: Optional[str] = None
+    excerpts: List[SearchExcerpt]
+
+
+class IntelligentSearchResponse(BaseModel):
+    user_query: str
+    refined_query: str
+    intent: str
+    search_context: str
+    llm_confidence: float
+    extracted_context: ExtractedSearchContext
+    total_results: int
+    results: List[IntelligentSearchResult]
+
+
+class SearchRecommendation(BaseModel):
+    original_query: str
+    refined_query: str
+    intent: str
+    key_terms: List[str]
+    suggested_filters: Dict[str, Any]
+    alternative_searches: List[str]
+    search_context: str
+    llm_confidence: float
