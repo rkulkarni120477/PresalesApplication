@@ -110,6 +110,8 @@ export default function ArtifactsPage() {
       }
 
       await apiClient.createArtifactWithFile(submitData);
+
+      // Artifact created! File processing continues in background
       setShowCreateModal(false);
       setFormData({
         name: '',
@@ -120,7 +122,10 @@ export default function ArtifactsPage() {
         summary: '',
         file: null,
       });
-      loadArtifacts();
+
+      // Reload artifacts after a short delay
+      // Background processing will continue on the server
+      setTimeout(() => loadArtifacts(), 1000);
     } catch (error: any) {
       const errorMsg = error?.response?.data?.detail || error?.message || 'Failed to create artifact';
       setCreateError(errorMsg);
@@ -281,9 +286,9 @@ export default function ArtifactsPage() {
               {createLoading && (
                 <div className="mt-6 space-y-2 bg-presales-page-bg p-4 rounded-lg">
                   <div className="flex justify-between items-center text-sm">
-                    <span className="text-presales-text font-medium">Creating artifact...</span>
+                    <span className="text-presales-text font-medium">Uploading and creating artifact...</span>
                     <span className="text-presales-text-secondary">
-                      {Math.floor(elapsedTime)}s / ~{estimatedTotalTime}s
+                      {Math.floor(elapsedTime)}s
                     </span>
                   </div>
                   <div className="w-full bg-presales-border rounded-full h-2 overflow-hidden">
@@ -295,7 +300,7 @@ export default function ArtifactsPage() {
                     />
                   </div>
                   <p className="text-xs text-presales-text-secondary">
-                    {Math.floor((elapsedTime / estimatedTotalTime) * 100)}% complete • Parsing and indexing your file
+                    Uploading file... File processing will continue in the background
                   </p>
                 </div>
               )}

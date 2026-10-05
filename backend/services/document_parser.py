@@ -6,6 +6,14 @@ from PyPDF2 import PdfReader
 from docx import Document
 import mimetypes
 
+try:
+    from pptx import Presentation
+    PPTX_AVAILABLE = True
+except ImportError:
+    PPTX_AVAILABLE = False
+    logger_init = logging.getLogger(__name__)
+    logger_init.warning("python-pptx not installed. PowerPoint files will be parsed as text.")
+
 logger = logging.getLogger(__name__)
 
 class DocumentParser:
@@ -39,6 +47,8 @@ class DocumentParser:
             return DocumentParser._parse_pdf(file_path)
         elif file_ext in [".docx", ".doc"]:
             return DocumentParser._parse_docx(file_path)
+        elif file_ext in [".pptx", ".ppt"]:
+            return DocumentParser._parse_pptx(file_path)
         elif file_ext in [".txt", ".md"]:
             return DocumentParser._parse_text(file_path)
         elif file_ext == ".csv":
@@ -104,6 +114,47 @@ class DocumentParser:
             return text
         except Exception as e:
             logger.error(f"Error parsing DOCX: {e}")
+            raise
+
+    @staticmethod
+    def _parse_pptx(file_path: Path) -> str:
+        """Extract text from PowerPoint file"""
+        try:
+            if not PPTX_AVAILABLE:
+                logger.warning("python-pptx not available, falling back to text parsing")
+                return DocumentParser._parse_text(file_path)
+
+            prs = Presentation(file_path)
+            text = ""
+
+            total_slides = len(prs.slides)
+            logger.info(f"Parsing PowerPoint with {total_slides} slides")
+
+            for slide_num, slide in enumerate(prs.slides, 1):
+                text += f"\n--- Slide {slide_num} ---\n"
+
+                # Extract text from all shapes in the slide
+                for shape in slide.shapes:
+                    if hasattr(shape, "text") and shape.text.strip():
+                        text += shape.text + "\n"
+
+                    # Extract text from tables
+                    if shape.has_table:
+                        table = shape.table
+                        for row in table.rows:
+                            row_text = []
+                            for cell in row.cells:
+                                row_text.append(cell.text)
+                            text += " | ".join(row_text) + "\n"
+
+                # Log progress every 10 slides
+                if slide_num % 10 == 0:
+                    logger.info(f"Progress: Extracted {slide_num}/{total_slides} slides ({len(text)} chars so far)")
+
+            logger.info(f"Extracted {len(text)} characters from PowerPoint ({total_slides} slides)")
+            return text
+        except Exception as e:
+            logger.error(f"Error parsing PowerPoint: {e}")
             raise
 
     @staticmethod

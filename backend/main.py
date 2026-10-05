@@ -13,6 +13,8 @@ import shutil
 import zipfile
 import tempfile
 from fastapi.responses import FileResponse
+from fastapi.concurrency import run_in_threadpool
+from fastapi import BackgroundTasks
 
 from database import get_db, init_db
 from models import User, Role, Opportunity, Artifact, OpportunityArtifactMapping, OpportunityCollaborator, AuditLog
@@ -1042,9 +1044,15 @@ async def intelligent_search(
     The LLM will:
     1. Refine the user's query for better relevance
     2. Understand intent and extract context
-    3. Provide confidence scores
+    3. Identify key search terms and keywords
+    4. Search vector DB with refined context
+    5. Return artifacts grouped by type with relevance explanations
 
-    Returns artifacts with download paths and confidence scores.
+    Returns artifacts grouped by type with:
+    - Download paths for each artifact
+    - Matched keywords that were found
+    - LLM-generated explanation of how each artifact addresses the search context
+    - Confidence scores
     """
     try:
         user_query = (payload.get("query") or "").strip()
@@ -1068,7 +1076,11 @@ async def intelligent_search(
             industry=industry
         )
 
-        # Enrich results with database information (name, owner, etc.)
+        # Get key terms and search context for relevance explanations
+        key_terms = search_results["extracted_context"].get("key_terms", [])
+        search_context = search_results["search_context"]
+
+        # Enrich results with database information and relevance details
         enriched_results = []
         for result in search_results.get("results", []):
             artifact_id = result.get("artifact_id")
@@ -1079,18 +1091,56 @@ async def intelligent_search(
             ).first()
 
             if artifact:
+                category = classify_artifact(artifact)
+
+                # Get matched keywords
+                matched_keywords = intelligent_search_service.get_matched_keywords(
+                    {"name": artifact.name, "artifact_type": artifact.artifact_type, "industry": artifact.industry},
+                    key_terms
+                )
+
+                # Get relevance explanation
+                relevance_explanation = intelligent_search_service.explain_artifact_relevance(
+                    {
+                        "name": artifact.name,
+                        "artifact_type": artifact.artifact_type,
+                        "industry": artifact.industry,
+                        "description": artifact.description
+                    },
+                    search_context,
+                    matched_keywords
+                )
+
                 enriched_result = {
                     **result,
                     "id": artifact.id,
                     "artifact_id": artifact.artifact_id,
                     "name": artifact.name,
                     "description": artifact.description,
-                    "category": classify_artifact(artifact),
+                    "category": category,
                     "download_path": f"/api/artifacts/{artifact.id}/download" if artifact.source_reference else None,
                     "has_file": bool(artifact.source_reference),
-                    "owner": f"{artifact.owner.first_name} {artifact.owner.last_name}".strip() if artifact.owner else None
+                    "owner": f"{artifact.owner.first_name} {artifact.owner.last_name}".strip() if artifact.owner else None,
+                    "matched_keywords": matched_keywords,
+                    "relevance_explanation": relevance_explanation
                 }
                 enriched_results.append(enriched_result)
+
+        # Define artifact type order
+        ARTIFACT_TYPE_ORDER = [
+            "PowerPoint Presentation",
+            "Case Study",
+            "Word Document",
+            "PDF Document",
+            "Spreadsheet",
+            "Other"
+        ]
+
+        # Group results by artifact type
+        grouped_results = intelligent_search_service.group_results_by_artifact_type(
+            enriched_results,
+            ARTIFACT_TYPE_ORDER
+        )
 
         return {
             "user_query": search_results["user_query"],
@@ -1098,6 +1148,7 @@ async def intelligent_search(
             "intent": search_results["intent"],
             "search_context": search_results["search_context"],
             "llm_confidence": search_results["llm_confidence"],
+            "key_terms": key_terms,
             "extracted_context": {
                 "key_terms": search_results["extracted_context"].get("key_terms"),
                 "industry": search_results["extracted_context"].get("industry"),
@@ -1106,6 +1157,14 @@ async def intelligent_search(
                 "alternative_searches": search_results["extracted_context"].get("alternative_searches")
             },
             "total_results": len(enriched_results),
+            "groups": [
+                {
+                    "type": type_name,
+                    "count": len(artifacts),
+                    "artifacts": artifacts
+                }
+                for type_name, artifacts in grouped_results.items()
+            ],
             "results": enriched_results
         }
 
@@ -1146,6 +1205,43 @@ async def get_search_recommendations(
         raise HTTPException(status_code=500, detail="Error analyzing query")
 
 
+def process_artifact_file(file_path: str, artifact_id: str, name: str, artifact_type: str, industry: str):
+    """
+    Background task to process artifact file (parse and index)
+    This runs in a separate thread to avoid blocking the main event loop
+    """
+    try:
+        logger.info(f"Background task: Processing artifact {artifact_id}")
+
+        # Parse file
+        raw_text = document_parser.parse_file(file_path)
+        logger.info(f"Parsed file, {len(raw_text)} characters extracted")
+
+        # Tokenize content
+        chunks = document_parser.tokenize_text(raw_text)
+        logger.info(f"Tokenized into {len(chunks)} chunks")
+
+        # Prepare artifact metadata for vector DB
+        artifact_metadata = {
+            "name": name,
+            "artifact_type": artifact_type,
+            "industry": industry,
+            "source_reference": str(file_path),
+        }
+
+        # Add chunks to vector database
+        vector_chunks_count = vector_db_service.add_artifact(
+            artifact_id,
+            chunks,
+            artifact_metadata
+        )
+        logger.info(f"Added {vector_chunks_count} chunks to vector database for artifact {artifact_id}")
+
+    except Exception as e:
+        logger.error(f"Error processing file for artifact {artifact_id}: {e}", exc_info=True)
+        # Don't fail - artifact is already created, just without vector embeddings
+
+
 @app.post("/api/artifacts", response_model=ArtifactResponse)
 async def create_artifact(
     name: str = Form(...),
@@ -1155,13 +1251,17 @@ async def create_artifact(
     description: str = Form(None),
     summary: str = Form(None),
     file: Optional[UploadFile] = File(None),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: Session = Depends(get_db)
 ):
+    """
+    Create artifact with optional file upload.
+    File processing happens in the background - response returned immediately.
+    """
     # Validate file size (100 MB)
     MAX_FILE_SIZE = 100 * 1024 * 1024
 
     file_path = None
-    vector_chunks_count = 0
     artifact_id_str = f"ART-{uuid.uuid4().hex[:8].upper()}"
 
     if file:
@@ -1181,36 +1281,23 @@ async def create_artifact(
 
         logger.info(f"Artifact file saved: {file_path}")
 
-        # Parse file and tokenize content
-        try:
-            raw_text = document_parser.parse_file(file_path)
-            chunks = document_parser.tokenize_text(raw_text)
-
-            # Prepare artifact metadata for vector DB
-            artifact_metadata = {
-                "name": name,
-                "artifact_type": artifact_type,
-                "industry": industry,
-                "source_reference": str(file_path),
-            }
-
-            # Add chunks to vector database
-            vector_chunks_count = vector_db_service.add_artifact(
-                artifact_id_str,
-                chunks,
-                artifact_metadata
-            )
-            logger.info(f"Added {vector_chunks_count} chunks to vector database for artifact {artifact_id_str}")
-
-        except Exception as e:
-            logger.error(f"Error processing file for vector database: {e}")
-            # Don't fail the artifact creation, but log the error
-            # The artifact is still created, just without vector embeddings
+        # Add background task to process file (parse and index)
+        # This returns immediately to user while processing happens in background
+        background_tasks.add_task(
+            process_artifact_file,
+            str(file_path),
+            artifact_id_str,
+            name,
+            artifact_type,
+            industry
+        )
+        logger.info(f"Queued background processing task for artifact {artifact_id_str}")
 
     # Get first user as default owner (demo mode)
     default_user = db.query(User).first()
     owner_id = default_user.id if default_user else 1
 
+    # Create artifact record immediately
     artifact = Artifact(
         artifact_id=artifact_id_str,
         name=name,
@@ -1228,7 +1315,7 @@ async def create_artifact(
     db.add(artifact)
     db.commit()
 
-    logger.info(f"Created artifact {artifact_id_str} with {vector_chunks_count} vector chunks")
+    logger.info(f"Created artifact {artifact_id_str} (file processing in background)")
 
     return artifact
 

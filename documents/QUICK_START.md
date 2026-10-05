@@ -1,205 +1,296 @@
-# Quick Start Guide
+# Intelligent Search - Quick Start Guide
 
-Get the Presales Platform up and running in 5 minutes!
+## What's New?
+The Presales App now has AI-powered intelligent search that:
+- ✅ Refines user queries using LLM (AWS Bedrock)
+- ✅ Understands search intent automatically
+- ✅ Extracts context (industry, technologies, artifact types)
+- ✅ Finds relevant artifacts with confidence scoring
+- ✅ Provides direct download paths
 
-## Prerequisites
+## 3-Minute Setup
 
-- Node.js 18+ installed
-- Python 3.9+ installed  
-- PostgreSQL 12+ installed and running
-- Git installed
-
-## Step 1: Database Setup (2 minutes)
-
-```bash
-# Open PostgreSQL terminal
-psql -U postgres
-
-# Create database and user
-CREATE DATABASE presales_db;
-CREATE USER presales WITH ENCRYPTED PASSWORD 'presales';
-ALTER ROLE presales SET client_encoding TO 'utf8';
-ALTER ROLE presales SET default_transaction_isolation TO 'read committed';
-ALTER ROLE presales SET default_transaction_deferrable TO on;
-ALTER ROLE presales SET timezone TO 'UTC';
-GRANT ALL PRIVILEGES ON DATABASE presales_db TO presales;
-\q
-```
-
-## Step 2: Backend Setup (1.5 minutes)
-
+### 1. Start the Server
 ```bash
 cd backend
-
-# Create and activate virtual environment
-python -m venv venv
-venv\Scripts\activate  # On Windows
-# or: source venv/bin/activate  # On macOS/Linux
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Initialize database
-python -c "from database import init_db; from seed import seed_database; init_db(); seed_database()"
-
-# Start backend (will run on http://localhost:8000)
-python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+python main.py
 ```
 
-Keep this terminal open!
-
-## Step 3: Frontend Setup (1.5 minutes)
-
-In a **new terminal**:
-
+### 2. Make Your First API Call
 ```bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Start frontend (will run on http://localhost:3000)
-npm run dev
+curl -X POST http://localhost:8000/api/ai/intelligent-search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "cloud migration case studies"}'
 ```
 
-## Step 4: Login and Explore
+### 3. Check the Response
+You'll get:
+- ✓ Refined query (improved for better search)
+- ✓ Detected intent (search/recommendation/analysis/etc)
+- ✓ LLM confidence score
+- ✓ List of artifacts with confidence scores
+- ✓ Download paths for each artifact
 
-1. Open http://localhost:3000 in your browser
-2. You should be redirected to the login page
-3. Use any demo credentials:
-   - **Email**: `priya.sharma@example.com`
-   - **Password**: `Demo@123`
+## Common Use Cases
 
-4. Explore the platform:
-   - **Dashboard**: View KPIs and charts
-   - **Opportunities**: See 10+ sample opportunities
-   - **Artifacts**: Browse 15+ sample artifacts
-   - **Mapping**: Map artifacts to opportunities
-   - **Users**: View all demo users
-   - **Reports**: Analysis and statistics
-   - **AI Assistant**: Chat with AI assistant
-   - **Audit Logs**: See all activity
-
-## Demo Users by Role
-
-### Solution Owners (Full Access)
-- **Priya Sharma** - priya.sharma@example.com
-- **Amit Kulkarni** - amit.kulkarni@example.com
-
-### Solution Members (Limited Access)
-- **Rahul Mehta** - rahul.mehta@example.com
-- **Sneha Patil** - sneha.patil@example.com
-
-### Guests (Read-Only)
-- **Neha Joshi** - neha.joshi@example.com
-- **Arjun Desai** - arjun.desai@example.com
-
-### Administrators (Full System Access)
-- **Vikram Shah** - vikram.shah@example.com
-- **Ananya Rao** - ananya.rao@example.com
-
-**All users use password**: `Demo@123`
-
-## API Documentation
-
-Once backend is running, view interactive API docs:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
-
-## Troubleshooting
-
-### Port 8000 already in use
+### Case 1: Simple Search
 ```bash
-# Use different port
-python -m uvicorn main:app --reload --host 0.0.0.0 --port 8001
-# Then update frontend NEXT_PUBLIC_API_URL=http://localhost:8001
+curl -X POST http://localhost:8000/api/ai/intelligent-search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "AI implementation strategies"}'
 ```
 
-### Port 3000 already in use
+### Case 2: Search with Context
 ```bash
-# Use different port
-npm run dev -- -p 3001
+curl -X POST http://localhost:8000/api/ai/intelligent-search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "modernization",
+    "context": "Healthcare industry, legacy monolithic app"
+  }'
 ```
 
-### PostgreSQL connection error
+### Case 3: Search with Filters
 ```bash
-# Verify PostgreSQL is running
-psql -U postgres
-
-# Check credentials match in backend/.env
+curl -X POST http://localhost:8000/api/ai/intelligent-search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "digital transformation",
+    "artifact_type": "Case Study",
+    "industry": "Finance",
+    "limit": 10
+  }'
 ```
 
-### Python/Node modules not found
+### Case 4: Get Search Recommendations
 ```bash
-# Delete node_modules and venv, reinstall
-rm -rf backend/venv frontend/node_modules
-# Then follow setup steps again
+curl -X GET "http://localhost:8000/api/ai/search-recommendations?query=machine%20learning%20implementation"
 ```
 
-## What's Included
+## Response Structure
 
-✅ 10+ Sample Opportunities
-- GlobalBank Digital Transformation ($5M)
-- HealthFirst Patient Engagement ($3.5M)
-- RetailOne Cloud Modernization ($4.2M)
-- And 7 more...
-
-✅ 15+ Sample Artifacts
-- Cloud Reference Architectures
-- Solution Proposals
-- Case Studies
-- Implementation Plans
-- And more...
-
-✅ Complete Features
-- CRUD operations for opportunities and artifacts
-- Many-to-many artifact mapping
-- Role-based access control
-- AI assistant (demo mode without AWS)
-- Audit logging
-- Reports and analytics
-
-## Next Steps
-
-1. **Try creating data**:
-   - Create a new opportunity
-   - Create a new artifact
-   - Map an artifact to an opportunity
-
-2. **Explore permissions**:
-   - Log in as different roles
-   - See what each role can access
-
-3. **Check the UI**:
-   - Dark green + white theme
-   - Responsive navigation
-   - Interactive charts and tables
-
-4. **Review the code**:
-   - Backend: `backend/main.py` (all API routes)
-   - Frontend: `frontend/pages/` (all pages)
-   - Database: `backend/models.py` (schema)
-
-## Optional: AWS Bedrock Setup
-
-To enable real AI responses instead of demo mode:
-
-1. Configure AWS credentials in `backend/.env`:
-```env
-AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your_key
-AWS_SECRET_ACCESS_KEY=your_secret
-BEDROCK_MODEL_ID=anthropic.claude-3-sonnet-20240229-v1:0
+```json
+{
+  "user_query": "original query",
+  "refined_query": "improved query",
+  "intent": "search|recommendation|analysis|comparison|learning",
+  "llm_confidence": 0.92,
+  "total_results": 5,
+  "results": [
+    {
+      "artifact_id": "ART-001",
+      "name": "Artifact Name",
+      "category": "Case Study",
+      "confidence_score": 0.94,
+      "download_path": "/api/artifacts/1/download",
+      "excerpts": [
+        {
+          "text": "Relevant excerpt...",
+          "similarity_score": 0.96
+        }
+      ]
+    }
+  ]
+}
 ```
 
-2. Restart the backend
+## Key Response Fields
 
-3. Go to Settings page to check Bedrock connection status
+| Field | Meaning |
+|-------|---------|
+| `refined_query` | LLM-improved version of your search |
+| `intent` | What the user is trying to do (search, learn, compare, etc) |
+| `llm_confidence` | How confident the LLM is (0-1 scale) |
+| `confidence_score` | How relevant each artifact is (0-1 scale) |
+| `download_path` | Direct link to download the artifact |
+| `excerpts` | Relevant text snippets from the document |
 
-## Production Deployment
+## Testing
 
-For deploying to production, see `DEPLOYMENT_GUIDE.md`
+### Run Full Test Suite
+```bash
+python test_intelligent_search.py
+```
+
+### Quick Test in Python
+```python
+import requests
+
+response = requests.post(
+    "http://localhost:8000/api/ai/intelligent-search",
+    json={"query": "cloud migration"}
+)
+
+results = response.json()
+print(f"Found {results['total_results']} artifacts")
+for artifact in results['results']:
+    print(f"- {artifact['name']} (confidence: {artifact['confidence_score']})")
+    print(f"  Download: {artifact['download_path']}")
+```
+
+## API Endpoints Reference
+
+### 1. POST `/api/ai/intelligent-search`
+**Purpose**: Smart search with query refinement
+
+**Request**:
+```json
+{
+  "query": "string (required)",
+  "context": "string (optional)",
+  "limit": "integer (optional, max 50)",
+  "artifact_type": "string (optional)",
+  "industry": "string (optional)"
+}
+```
+
+**Response**: 
+- 200: Success with results and metadata
+- 400: Bad request (missing query)
+- 500: Server error
 
 ---
 
-**You're all set!** Start exploring the Presales Platform! 🚀
+### 2. GET `/api/ai/search-recommendations`
+**Purpose**: Get tips to improve a search
+
+**Query Params**:
+- `query` (required): The search query to analyze
+
+**Response**:
+- `refined_query`: Better version of the query
+- `intent`: What user is trying to do
+- `alternative_searches`: Other ways to search
+- `suggested_filters`: Industry, types, technologies
+
+---
+
+### 3. POST `/api/ai/assistant-search` (Enhanced)
+**Purpose**: Original assistant search, now with query refinement
+
+**Now includes**:
+- `refined_query`: Query improved by LLM
+- `intent`: Detected search intent
+- `llm_confidence`: LLM confidence score
+
+## Performance Tips
+
+1. **Faster Searches**
+   - Use `limit: 5` for quick results
+   - Filter by `industry` or `artifact_type` early
+   - Avoid very broad queries
+
+2. **Better Results**
+   - Add `context` when possible
+   - Be specific in your query
+   - Use `search-recommendations` to explore options
+
+3. **Error Handling**
+   - Check `llm_confidence` - low score means refine your query
+   - If no results, try `search-recommendations`
+   - Bedrock unavailable? Search still works with original query
+
+## Frontend Integration Example
+
+```javascript
+// Search for artifacts
+const searchArtifacts = async (query, context = null) => {
+  const response = await fetch('/api/ai/intelligent-search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, context, limit: 10 })
+  });
+  
+  const data = await response.json();
+  
+  return {
+    refinedQuery: data.refined_query,
+    intent: data.intent,
+    confidence: data.llm_confidence,
+    artifacts: data.results.map(a => ({
+      id: a.id,
+      name: a.name,
+      type: a.category,
+      relevance: a.confidence_score,
+      downloadUrl: a.download_path,
+      excerpt: a.excerpts[0]?.text || ''
+    }))
+  };
+};
+
+// Get search tips
+const getSearchTips = async (query) => {
+  const response = await fetch(
+    `/api/ai/search-recommendations?query=${encodeURIComponent(query)}`
+  );
+  return response.json();
+};
+```
+
+## Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| No results | Try using `search-recommendations` to refine query |
+| Low confidence score | Query might be unclear - add more context |
+| Slow responses | Reduce `limit`, add filters, be more specific |
+| 500 errors | Check if Bedrock is configured (graceful fallback exists) |
+| Empty artifacts | Ensure artifacts are indexed in vector DB |
+
+## Need Help?
+
+1. **Full Documentation**: See `INTELLIGENT_SEARCH_GUIDE.md`
+2. **Implementation Details**: See `IMPLEMENTATION_SUMMARY.md`
+3. **Test Examples**: See `test_intelligent_search.py`
+4. **Server Logs**: Check for error messages
+
+## Configuration
+
+Everything is configured in `config.py`:
+```python
+aws_region = "ap-south-1"  # Your AWS region
+bedrock_model_id = "anthropic.claude-3-sonnet-20240229-v1:0"  # Claude 3
+```
+
+No additional configuration needed - it just works!
+
+## What Happens Behind the Scenes?
+
+1. **LLM Refinement** (1-2s)
+   - Query is sent to Bedrock (Claude 3)
+   - LLM improves the query
+   - Extracts intent and context
+
+2. **Vector Search** (0.5-1s)
+   - Refined query searches Chroma DB
+   - Gets semantic matches
+   - Computes similarity scores
+
+3. **Aggregation** (0.1s)
+   - Groups results by artifact
+   - Calculates confidence scores
+   - Formats response
+
+**Total Time**: 2-3 seconds (typical)
+
+## Examples of Query Refinement
+
+| Original | Refined |
+|----------|---------|
+| "cloud" | "cloud computing migration case studies and best practices" |
+| "AI" | "artificial intelligence implementation strategies and use cases" |
+| "mobile" | "mobile application development and modernization strategies" |
+| "security" | "cybersecurity best practices and risk management frameworks" |
+
+## Next Steps
+
+1. ✅ Try the example requests above
+2. ✅ Run the test suite
+3. ✅ Integrate into your frontend
+4. ✅ Check the full guide for advanced features
+
+---
+
+**Ready to use intelligent search!** 🚀
+
+For detailed documentation, see `INTELLIGENT_SEARCH_GUIDE.md`

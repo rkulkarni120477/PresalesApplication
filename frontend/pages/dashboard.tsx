@@ -23,10 +23,19 @@ export default function Dashboard() {
 
   const loadDashboardData = async () => {
     try {
-      const [oppsResponse, artsResponse] = await Promise.all([
-        apiClient.getOpportunities(0, 100),
-        apiClient.getArtifacts(0, 100),
-      ]);
+      // Fetch smaller dataset for faster dashboard load (20 records instead of 100)
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Dashboard load timeout')), 15000) // 15 second timeout
+      );
+
+      const [oppsResponse, artsResponse] = await Promise.race([
+        Promise.all([
+          apiClient.getOpportunities(0, 20), // Reduced from 100 to 20
+          apiClient.getArtifacts(0, 20), // Reduced from 100 to 20
+        ]),
+        timeoutPromise
+      ]) as any;
 
       setData({
         totalOpportunities: oppsResponse.length,
@@ -39,6 +48,16 @@ export default function Dashboard() {
       });
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
+      // Set empty data to stop loading spinner
+      setData({
+        totalOpportunities: 0,
+        activeOpportunities: 0,
+        totalArtifacts: 0,
+        publishedArtifacts: 0,
+        mappings: 0,
+        opportunities: [],
+        artifacts: [],
+      });
     } finally {
       setLoading(false);
     }

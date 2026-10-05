@@ -172,7 +172,7 @@ class APIClient {
   async createArtifactWithFile(formData: FormData) {
     const response = await this.client.post('/api/artifacts', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 10 * 60 * 1000, // 10 minute timeout for large file uploads
+      timeout: 5 * 60 * 1000, // 5 minute timeout for file upload (includes network transfer time, not backend processing)
     });
     return response.data;
   }

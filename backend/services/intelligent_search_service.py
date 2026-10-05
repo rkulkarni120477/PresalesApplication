@@ -246,6 +246,96 @@ class IntelligentSearchService:
 
         return artifact_groups
 
+    def get_matched_keywords(self, artifact: Dict, key_terms: List[str]) -> List[str]:
+        """
+        Identify which keywords matched in an artifact
+
+        Args:
+            artifact: Artifact data
+            key_terms: List of key terms from LLM
+
+        Returns:
+            List of matched keywords
+        """
+        matched = []
+        text_to_search = f"{artifact.get('name', '')} {artifact.get('artifact_type', '')} {artifact.get('industry', '')}".lower()
+
+        for term in key_terms:
+            if term.lower() in text_to_search:
+                matched.append(term)
+
+        return matched
+
+    def explain_artifact_relevance(self, artifact: Dict, search_context: str, matched_keywords: List[str]) -> str:
+        """
+        Generate explanation of how artifact addresses search context using LLM
+
+        Args:
+            artifact: Artifact data
+            search_context: The search context from LLM
+            matched_keywords: Keywords that matched
+
+        Returns:
+            Explanation string
+        """
+        if not self.bedrock_service.available:
+            return f"Matches {len(matched_keywords)} key terms: {', '.join(matched_keywords)}"
+
+        prompt = f"""
+        Briefly explain (2-3 sentences) how this artifact is relevant to the search context.
+
+        SEARCH CONTEXT: {search_context}
+        MATCHED KEYWORDS: {', '.join(matched_keywords) if matched_keywords else 'N/A'}
+
+        ARTIFACT:
+        Name: {artifact.get('name')}
+        Type: {artifact.get('artifact_type')}
+        Industry: {artifact.get('industry')}
+        Description: {artifact.get('description', 'No description')}
+
+        Provide a clear explanation of how this artifact addresses the search context.
+        Keep response concise (2-3 sentences).
+        """
+
+        try:
+            response = self.bedrock_service._invoke_model(prompt)
+            if response:
+                return response.strip()
+        except Exception as e:
+            logger.warning(f"Error generating explanation: {e}")
+
+        return f"Covers: {', '.join(matched_keywords) if matched_keywords else 'related content'}"
+
+    def group_results_by_artifact_type(self, artifacts: List[Dict], type_order: List[str]) -> Dict[str, List[Dict]]:
+        """
+        Group artifacts by type in specified order
+
+        Args:
+            artifacts: List of artifacts
+            type_order: Desired order of types (e.g., ['PowerPoint', 'Case Study', ...])
+
+        Returns:
+            Dict with types as keys and artifact lists as values
+        """
+        grouped = {}
+
+        # Initialize groups in order
+        for type_name in type_order:
+            grouped[type_name] = []
+
+        grouped["Other"] = []
+
+        # Assign artifacts to groups
+        for artifact in artifacts:
+            artifact_type = artifact.get("category", "Other")
+            if artifact_type in grouped:
+                grouped[artifact_type].append(artifact)
+            else:
+                grouped["Other"].append(artifact)
+
+        # Remove empty groups
+        return {k: v for k, v in grouped.items() if v}
+
     def get_search_recommendations(self, user_query: str) -> Dict:
         """
         Get recommendations for improving search based on query analysis
