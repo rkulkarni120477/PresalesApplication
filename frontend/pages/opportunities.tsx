@@ -114,10 +114,10 @@ export default function OpportunitiesPage() {
   const loadPresalesAdmins = async () => {
     try {
       const users = await apiClient.getUsers();
-      const admins = users.filter((u: any) => u.role?.name === 'Presales Administrator');
+      const admins = users.filter((u: any) => u.role?.name === 'Presales Solution Owner');
       setPresalesAdmins(admins);
     } catch (error) {
-      console.error('Failed to load Presales Administrators:', error);
+      console.error('Failed to load Presales Solution Owners:', error);
     }
   };
 
@@ -336,18 +336,18 @@ export default function OpportunitiesPage() {
       {showAssignModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="card w-full max-w-md">
-            <h3 className="text-2xl font-bold text-presales-text mb-6">Assign to Presales Administrator</h3>
+            <h3 className="text-2xl font-bold text-presales-text mb-6">Assign to Presales Solution Owner</h3>
 
             <div className="space-y-4">
               <label className="block text-sm font-medium text-presales-text mb-2">
-                Select Administrator
+                Select Solution Owner
               </label>
               <select
                 value={selectedAdminId || ''}
                 onChange={(e) => setSelectedAdminId(Number(e.target.value))}
                 className="w-full border border-presales-border rounded-lg px-4 py-2 text-presales-text"
               >
-                <option value="">-- Choose an Administrator --</option>
+                <option value="">-- Choose a Solution Owner --</option>
                 {presalesAdmins.map((admin) => (
                   <option key={admin.id} value={admin.id}>
                     {admin.first_name} {admin.last_name}
