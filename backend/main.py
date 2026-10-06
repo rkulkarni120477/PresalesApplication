@@ -929,8 +929,10 @@ async def delete_opportunity(
     if current_role_name != "Presales Administrator":
         raise HTTPException(status_code=403, detail="Only Presales Administrators can delete opportunities")
 
-    # Delete associated artifact mappings first
+    # Delete all related records before deleting the opportunity
     db.query(OpportunityArtifactMapping).filter(OpportunityArtifactMapping.opportunity_id == opp_id).delete()
+    db.query(OpportunityCollaborator).filter(OpportunityCollaborator.opportunity_id == opp_id).delete()
+    db.query(AuditLog).filter(AuditLog.opportunity_id == opp_id).delete()
 
     # Delete the opportunity
     db.delete(opportunity)
