@@ -49,6 +49,7 @@ export default function OpportunityDetailsPage() {
   const [assignableUsers, setAssignableUsers] = useState<any[]>([]);
   const [selectedAssigneeId, setSelectedAssigneeId] = useState<number | null>(null);
   const [assignModalTitle, setAssignModalTitle] = useState('');
+  const [assignTargetRole, setAssignTargetRole] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -86,29 +87,21 @@ export default function OpportunityDetailsPage() {
   }, [id, user?.role, opportunity]);
 
   useEffect(() => {
-    if (showAssignModal) {
+    if (showAssignModal && assignTargetRole) {
       loadAssignableUsers();
     }
-  }, [showAssignModal]);
+  }, [showAssignModal, assignTargetRole]);
 
   const loadAssignableUsers = async () => {
     try {
       const users = await apiClient.getUsers();
-
-      // Load users based on current user's role
-      if (user?.role === 'Presales Administrator') {
-        const solutionOwners = users.filter((u: any) => u.role?.name === 'Presales Solution Owner');
-        setAssignableUsers(solutionOwners);
-        setAssignModalTitle('Assign to Presales Solution Owner');
-      } else if (user?.role === 'Presales Solution Owner') {
-        const solutionMembers = users.filter((u: any) => u.role?.name === 'Presales Solution Member');
-        setAssignableUsers(solutionMembers);
-        setAssignModalTitle('Add Presales Solution Member');
-      } else if (user?.role === 'Sales Owner') {
-        const admins = users.filter((u: any) => u.role?.name === 'Presales Administrator');
-        setAssignableUsers(admins);
-        setAssignModalTitle('Assign to Presales Administrator');
-      }
+      const titles: Record<string, string> = {
+        'Presales Administrator': 'Assign to Presales Administrator',
+        'Presales Solution Owner': 'Assign to Presales Solution Owner',
+        'Presales Solution Member': 'Add Presales Solution Member',
+      };
+      setAssignableUsers(users.filter((u: any) => u.role?.name === assignTargetRole));
+      setAssignModalTitle(titles[assignTargetRole || ''] || 'Assign Opportunity');
     } catch (error) {
       console.error('Failed to load assignable users:', error);
     }
@@ -129,6 +122,7 @@ export default function OpportunityDetailsPage() {
         console.log('Opportunity assigned successfully');
       }
       setShowAssignModal(false);
+      setAssignTargetRole(null);
       setSelectedAssigneeId(null);
       await loadOpportunity();
     } catch (error: any) {
@@ -301,9 +295,12 @@ export default function OpportunityDetailsPage() {
         </Link>
         <div className="flex items-center gap-2">
           {/* Assign buttons */}
-          {user?.role === 'Sales Owner' && !opportunity?.assigned_to_id && (
+          {user?.role === 'Presales Administrator' && !opportunity?.assigned_to_id && (
             <button
-              onClick={() => setShowAssignModal(true)}
+              onClick={() => {
+                setAssignTargetRole('Presales Administrator');
+                setShowAssignModal(true);
+              }}
               className="inline-flex items-center gap-2 px-4 py-2 bg-presales-dark-green text-white border border-presales-dark-green rounded-lg hover:bg-presales-medium-green transition-all duration-200"
               title="Assign this opportunity to a Presales Administrator"
             >
@@ -313,7 +310,10 @@ export default function OpportunityDetailsPage() {
           )}
           {user?.role === 'Presales Administrator' && (
             <button
-              onClick={() => setShowAssignModal(true)}
+              onClick={() => {
+                setAssignTargetRole('Presales Solution Owner');
+                setShowAssignModal(true);
+              }}
               className="inline-flex items-center gap-2 px-4 py-2 bg-presales-dark-green text-white border border-presales-dark-green rounded-lg hover:bg-presales-medium-green transition-all duration-200"
               title="Assign this opportunity to a Presales Solution Owner"
             >
@@ -323,7 +323,10 @@ export default function OpportunityDetailsPage() {
           )}
           {user?.role === 'Presales Solution Owner' && opportunity?.assigned_to_id === user?.id && (
             <button
-              onClick={() => setShowAssignModal(true)}
+              onClick={() => {
+                setAssignTargetRole('Presales Solution Member');
+                setShowAssignModal(true);
+              }}
               className="inline-flex items-center gap-2 px-4 py-2 bg-presales-dark-green text-white border border-presales-dark-green rounded-lg hover:bg-presales-medium-green transition-all duration-200"
               title="Add a Presales Solution Member to this opportunity"
             >
@@ -332,8 +335,10 @@ export default function OpportunityDetailsPage() {
             </button>
           )}
 
-          {/* Edit button - available to Sales Owner, Solution Owner, and Solution Member */}
-          {(user?.role === 'Sales Owner' || user?.role === 'Presales Solution Owner' || user?.role === 'Presales Solution Member') && (
+          {/* Edit button - available to the opportunity owner, Solution Owner, and Solution Member */}
+          {(user?.role === 'Presales Administrator' && opportunity?.owner_id === user?.id) ||
+            user?.role === 'Presales Solution Owner' ||
+            user?.role === 'Presales Solution Member' ? (
             <button
               onClick={() => setShowEditModal(true)}
               className="inline-flex items-center gap-2 px-4 py-2 text-presales-dark-green border border-presales-border rounded-lg hover:bg-presales-light-green transition-all duration-200"
@@ -341,7 +346,7 @@ export default function OpportunityDetailsPage() {
               <Edit size={16} />
               Edit
             </button>
-          )}
+          ) : null}
 
           {/* Archive button - only for Solution Owner and Presales Administrator */}
           {(user?.role === 'Presales Solution Owner' || user?.role === 'Presales Administrator') && (
@@ -354,8 +359,8 @@ export default function OpportunityDetailsPage() {
             </button>
           )}
 
-          {/* Delete button - only for Sales Owner */}
-          {user?.role === 'Sales Owner' && (
+          {/* Delete button - only for Presales Administrators who own the opportunity */}
+          {user?.role === 'Presales Administrator' && opportunity?.owner_id === user?.id && (
             <button
               onClick={handleDelete}
               className="inline-flex items-center gap-2 px-4 py-2 text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-all duration-200"
@@ -794,6 +799,7 @@ export default function OpportunityDetailsPage() {
                 onClick={() => {
                   setShowAssignModal(false);
                   setSelectedAssigneeId(null);
+                  setAssignTargetRole(null);
                 }}
                 disabled={assignLoading}
                 className="px-6 py-2 border border-presales-border rounded-lg hover:bg-presales-page-bg transition-all duration-200 disabled:opacity-50"

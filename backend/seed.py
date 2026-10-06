@@ -227,15 +227,8 @@ def create_roles_and_permissions(db: Session):
             "description": "Full system access",
             "permissions": [
                 "manage_users", "manage_roles", "manage_all_opportunities", "manage_all_artifacts",
-                "view_audit_logs", "system_configuration"
-            ]
-        },
-        {
-            "name": "Sales Owner",
-            "description": "Manage sales opportunities",
-            "permissions": [
-                "view_all_opportunities", "create_opportunity", "edit_opportunity",
-                "view_reports", "view_artifacts"
+                "view_audit_logs", "system_configuration", "view_all_opportunities",
+                "create_opportunity", "edit_opportunity", "view_reports", "view_artifacts"
             ]
         },
         {
@@ -264,16 +257,28 @@ def create_roles_and_permissions(db: Session):
 
     for role_data in roles_data:
         existing_role = db.query(Role).filter(Role.name == role_data["name"]).first()
-        if not existing_role:
+        if existing_role:
+            role = existing_role
+        else:
             role = Role(name=role_data["name"], description=role_data["description"])
             db.add(role)
             db.flush()
 
-            for perm_name in role_data["permissions"]:
-                existing_perm = db.query(Permission).filter(Permission.name == perm_name, Permission.role_id == role.id).first()
-                if not existing_perm:
-                    permission = Permission(name=perm_name, role_id=role.id)
-                    db.add(permission)
+        for perm_name in role_data["permissions"]:
+            existing_perm = db.query(Permission).filter(Permission.name == perm_name, Permission.role_id == role.id).first()
+            if not existing_perm:
+                permission = Permission(name=perm_name, role_id=role.id)
+                db.add(permission)
+
+    retired_role = db.query(Role).filter(Role.name == "Sales Owner").first()
+    if retired_role:
+        admin_role = db.query(Role).filter(Role.name == "Presales Administrator").one()
+        db.query(User).filter(User.role_id == retired_role.id).update(
+            {User.role_id: admin_role.id},
+            synchronize_session=False
+        )
+        db.query(Permission).filter(Permission.role_id == retired_role.id).delete(synchronize_session=False)
+        db.delete(retired_role)
 
     db.commit()
 
@@ -286,7 +291,7 @@ def create_users(db: Session):
         {"first_name": "Rahul", "last_name": "Mehta", "email": "rahul.mehta@example.com", "role_name": "Artifact Repository Owner", "dept": "Sales"},
         {"first_name": "Sneha", "last_name": "Patil", "email": "sneha.patil@example.com", "role_name": "Guest/Reviewer", "dept": "Sales"},
         {"first_name": "Neha", "last_name": "Joshi", "email": "neha.joshi@example.com", "role_name": "Management", "dept": "Operations"},
-        {"first_name": "Arjun", "last_name": "Desai", "email": "arjun.desai@example.com", "role_name": "Sales Owner", "dept": "Operations"},
+        {"first_name": "Arjun", "last_name": "Desai", "email": "arjun.desai@example.com", "role_name": "Presales Administrator", "dept": "Operations"},
         {"first_name": "Vikram", "last_name": "Shah", "email": "vikram.shah@example.com", "role_name": "Presales Administrator", "dept": "IT"},
         {"first_name": "Ananya", "last_name": "Rao", "email": "ananya.rao@example.com", "role_name": "Presales Administrator", "dept": "IT"},
     ]
