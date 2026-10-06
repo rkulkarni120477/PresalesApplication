@@ -133,7 +133,7 @@ class ArtifactResponse(ArtifactBase):
 
 
 class MappingCreate(BaseModel):
-    artifact_id: int
+    artifact_id: Optional[int] = None
     purpose: Optional[str] = None
 
 
