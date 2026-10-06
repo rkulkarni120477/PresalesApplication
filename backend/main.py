@@ -200,13 +200,12 @@ async def list_opportunities(
         )
     elif role_name == "Presales Solution Owner":
         # Can see opportunities assigned to them AND opportunities they assigned to others
-        # But not if they've already completed it (unless they need to see member_completed status)
         query = query.filter(
             or_(
                 Opportunity.assigned_to_id == current_user.id,
                 Opportunity.assigned_by_id == current_user.id
             )
-        ).filter(Opportunity.completion_status != "owner_completed")
+        )
     elif role_name == "Presales Solution Member":
         # Can see opportunities assigned to them OR where they are collaborators
         # But not if they've already completed it
