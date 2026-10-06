@@ -61,8 +61,7 @@ app.add_middleware(
 async def startup():
     try:
         init_db()
-        seed_database()
-        logger.info("Database initialized and seeded")
+        logger.info("Database initialized")
     except Exception as e:
         logger.error(f"Startup error: {e}")
 
