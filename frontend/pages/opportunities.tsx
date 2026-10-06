@@ -176,7 +176,7 @@ export default function OpportunitiesPage() {
           </select>
         </div>
 
-        {user?.role === 'Sales Owner' && (
+        {user?.role === 'Presales Administrator' && (
           <button
             onClick={() => setShowCreateModal(true)}
             className="bg-presales-dark-green text-white px-6 py-2 rounded-lg font-medium hover:bg-presales-medium-green transition-all duration-200 flex items-center gap-2"
@@ -454,7 +454,7 @@ export default function OpportunitiesPage() {
                       >
                         <Eye size={16} />
                       </Link>
-                      {user?.role === 'Sales Owner' && !opp.assigned_to_id && (
+                      {user?.role === 'Presales Administrator' && !opp.assigned_to_id && (
                         <button
                           onClick={async () => {
                             setSelectedOpportunityId(opp.id);
@@ -467,7 +467,7 @@ export default function OpportunitiesPage() {
                           <span className="text-sm">📋</span>
                         </button>
                       )}
-                      {user?.role === 'Sales Owner' && (
+                      {user?.role === 'Presales Administrator' && (
                         <button
                           onClick={async () => {
                             if (confirm('Are you sure you want to delete this opportunity?')) {

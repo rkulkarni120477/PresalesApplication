@@ -93,7 +93,7 @@ async def login(request: LoginRequest, db: Session = Depends(get_db)):
         "rahul.mehta@example.com": {"id": 3, "name": "Rahul Mehta", "role": "Artifact Repository Owner"},
         "sneha.patil@example.com": {"id": 4, "name": "Sneha Patil", "role": "Guest/Reviewer"},
         "neha.joshi@example.com": {"id": 5, "name": "Neha Joshi", "role": "Management"},
-        "arjun.desai@example.com": {"id": 6, "name": "Arjun Desai", "role": "Sales Owner"},
+        "arjun.desai@example.com": {"id": 6, "name": "Arjun Desai", "role": "Presales Administrator"},
         "vikram.shah@example.com": {"id": 7, "name": "Vikram Shah", "role": "Presales Administrator"},
         "ananya.rao@example.com": {"id": 8, "name": "Ananya Rao", "role": "Presales Administrator"},
     }
@@ -191,11 +191,12 @@ async def list_opportunities(
 
     # Role-based filtering
     if role_name == "Presales Administrator":
-        # Can see opportunities assigned to them AND opportunities they assigned to others
+        # Includes opportunities they own as well as those they handle in the presales workflow.
         query = query.filter(
             or_(
                 Opportunity.assigned_to_id == current_user.id,
-                Opportunity.assigned_by_id == current_user.id
+                Opportunity.assigned_by_id == current_user.id,
+                Opportunity.owner_id == current_user.id
             )
         )
     elif role_name == "Presales Solution Owner":
@@ -216,9 +217,6 @@ async def list_opportunities(
                 Opportunity.collaborators.any(OpportunityCollaborator.user_id == current_user.id)
             )
         ).filter(Opportunity.completion_status != "member_completed")
-    elif role_name == "Sales Owner":
-        # Sees the opportunities they created, assigned or not
-        query = query.filter(Opportunity.owner_id == current_user.id)
     else:
         # Other roles cannot see any opportunities
         return []
@@ -259,8 +257,12 @@ async def get_opportunity(
         role_name = user_role.name if user_role else None
 
         if role_name == "Presales Administrator":
-            # Can view opportunities assigned to them OR opportunities they assigned to others
-            if opportunity.assigned_to_id != current_user.id and opportunity.assigned_by_id != current_user.id:
+            # Can view opportunities they own, are assigned to, or assigned to others.
+            if (
+                opportunity.owner_id != current_user.id
+                and opportunity.assigned_to_id != current_user.id
+                and opportunity.assigned_by_id != current_user.id
+            ):
                 raise HTTPException(status_code=403, detail="Access denied")
         elif role_name == "Presales Solution Owner":
             # Can view opportunities assigned to them OR opportunities they assigned to others
@@ -270,10 +272,6 @@ async def get_opportunity(
             # Can view opportunities assigned to them OR where they are collaborators
             is_collaborator = any(c.user_id == current_user.id for c in opportunity.collaborators)
             if opportunity.assigned_to_id != current_user.id and not is_collaborator:
-                raise HTTPException(status_code=403, detail="Access denied")
-        elif role_name == "Sales Owner":
-            # Can only view opportunities they created
-            if opportunity.owner_id != current_user.id:
                 raise HTTPException(status_code=403, detail="Access denied")
         else:
             # Other roles cannot view any opportunities
@@ -362,8 +360,8 @@ async def create_opportunity(
         raise HTTPException(status_code=401, detail="User not found")
 
     user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
-    if not user_role or user_role.name != "Sales Owner":
-        raise HTTPException(status_code=403, detail="Only Sales Owner can create opportunities")
+    if not user_role or user_role.name != "Presales Administrator":
+        raise HTTPException(status_code=403, detail="Only Presales Administrators can create opportunities")
 
     opportunity = Opportunity(
         opportunity_id=f"OPP-{uuid.uuid4().hex[:8].upper()}",
@@ -680,14 +678,9 @@ async def assign_opportunity(
     assigned_role_name = assigned_user_role.name if assigned_user_role else None
 
     # Validate assignment hierarchy
-    if current_role_name == "Sales Owner":
-        # Sales Owner can assign to Presales Administrator
-        if assigned_role_name != "Presales Administrator":
-            raise HTTPException(status_code=400, detail="Sales Owner can only assign to Presales Administrator")
-    elif current_role_name == "Presales Administrator":
-        # Admin can assign to Presales Solution Owner
-        if assigned_role_name != "Presales Solution Owner":
-            raise HTTPException(status_code=400, detail="Presales Administrator can only assign to Presales Solution Owner")
+    if current_role_name == "Presales Administrator":
+        if assigned_role_name not in {"Presales Solution Owner", "Presales Administrator"}:
+            raise HTTPException(status_code=400, detail="Presales Administrator can only assign to Presales Solution Owner or Presales Administrator")
     elif current_role_name == "Presales Solution Owner":
         # Solution Owner can assign to Presales Solution Member
         if assigned_role_name != "Presales Solution Member":
@@ -845,16 +838,12 @@ async def complete_opportunity(
                 ))
 
         elif current_role_name == "Presales Administrator":
-            # Can only complete if they assigned it
-            if opportunity.assigned_by_id != current_user.id:
+            if opportunity.owner_id == current_user.id:
+                opportunity.completion_status = "completed"
+            elif opportunity.assigned_by_id == current_user.id:
+                opportunity.completion_status = "admin_completed"
+            else:
                 raise HTTPException(status_code=403, detail="You can only complete opportunities you assigned")
-            opportunity.completion_status = "admin_completed"
-
-        elif current_role_name == "Sales Owner":
-            # Can only complete if they created it
-            if opportunity.owner_id != current_user.id:
-                raise HTTPException(status_code=403, detail="You can only complete opportunities you created")
-            opportunity.completion_status = "completed"
 
         else:
             raise HTTPException(status_code=403, detail="You don't have permission to complete this opportunity")
@@ -933,16 +922,12 @@ async def delete_opportunity(
     if not opportunity:
         raise HTTPException(status_code=404, detail="Opportunity not found")
 
-    # Check if user is Sales Owner
+    # Only Presales Administrators may delete opportunities.
     current_user_role = db.query(Role).filter(Role.id == current_user.role_id).first()
     current_role_name = current_user_role.name if current_user_role else None
 
-    if current_role_name != "Sales Owner":
-        raise HTTPException(status_code=403, detail="Only Sales Owner can delete opportunities")
-
-    # Check if user is the owner of this opportunity
-    if opportunity.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You can only delete opportunities you created")
+    if current_role_name != "Presales Administrator":
+        raise HTTPException(status_code=403, detail="Only Presales Administrators can delete opportunities")
 
     # Delete associated artifact mappings first
     db.query(OpportunityArtifactMapping).filter(OpportunityArtifactMapping.opportunity_id == opp_id).delete()
@@ -1764,4 +1749,3 @@ async def get_audit_logs(
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
