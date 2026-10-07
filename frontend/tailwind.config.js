@@ -8,14 +8,14 @@ module.exports = {
     extend: {
       colors: {
         'presales': {
-          'dark-green': '#0B5D3B',
-          'deep-green': '#06452D',
-          'medium-green': '#148A58',
-          'light-green': '#EAF6F0',
-          'page-bg': '#F7F9F8',
+          'dark-green': '#2D66E8',
+          'deep-green': '#1E4FC7',
+          'medium-green': '#4C8BF5',
+          'light-green': '#EAF2FF',
+          'page-bg': '#F4F7FC',
           'text': '#1F2937',
-          'text-secondary': '#6B7280',
-          'border': '#DDE5E1',
+          'text-secondary': '#66758D',
+          'border': '#DFE7F3',
         }
       }
     },

@@ -78,13 +78,13 @@ export default function OpportunityDetailsPage() {
   }, [id, opportunity]);
 
   useEffect(() => {
-    if (id && user?.role === 'Presales Solution Owner' && opportunity) {
+    if (id && user?.id && opportunity) {
       apiClient
         .getOpportunityActivityLogs(Number(id))
         .then(setActivityLogs)
         .catch((e) => console.error('Failed to load activity logs:', e));
     }
-  }, [id, user?.role, opportunity]);
+  }, [id, user?.id, opportunity]);
 
   useEffect(() => {
     if (showAssignModal && assignTargetRole) {
@@ -555,7 +555,7 @@ export default function OpportunityDetailsPage() {
           </table>
         )}
       </div>
-      {user?.role === 'Presales Solution Owner' && (
+      {user && (
         <div className="card">
           <h2 className="text-xl font-bold text-presales-text mb-4">🕒 Activity Log</h2>
           {activityLogs.length === 0 ? (

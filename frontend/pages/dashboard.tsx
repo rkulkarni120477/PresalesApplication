@@ -1,243 +1,378 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { apiClient } from '@/lib/api';
-import { BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { TrendingUp, Package, Users, Target } from 'lucide-react';
+import { useAuthStore } from '@/lib/store';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import { ArrowRight, Briefcase, Package, RefreshCw, TrendingUp } from 'lucide-react';
 
-interface DashboardData {
-  totalOpportunities: number;
-  activeOpportunities: number;
-  totalArtifacts: number;
-  publishedArtifacts: number;
-  mappings: number;
-  opportunities: any[];
-  artifacts: any[];
+interface Opportunity {
+  id: number;
+  name: string;
+  customer: string;
+  stage: string;
+  estimated_value?: number;
+  probability?: number;
+  assigned_to_id?: number | null;
+  assigned_to_name?: string;
 }
 
+interface Artifact {
+  id: number;
+  name?: string;
+  title?: string;
+  artifact_type?: string;
+  status?: string;
+  summary?: string;
+  created_at?: string;
+}
+
+interface DashboardData {
+  opportunities: Opportunity[];
+  artifacts: Artifact[];
+}
+
+const stages = ['Discovery', 'Qualification', 'Solutioning', 'Proposal', 'Negotiation', 'Closed Won', 'Closed Lost'];
+
 export default function Dashboard() {
+  const { user } = useAuthStore();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadDashboardData();
-  }, []);
+  const [error, setError] = useState('');
 
   const loadDashboardData = async () => {
+    setLoading(true);
+    setError('');
     try {
-      // Fetch smaller dataset for faster dashboard load (20 records instead of 100)
-      // Add timeout to prevent hanging
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Dashboard load timeout')), 15000) // 15 second timeout
-      );
-
-      const [oppsResponse, artsResponse] = await Promise.race([
-        Promise.all([
-          apiClient.getOpportunities(0, 20), // Reduced from 100 to 20
-          apiClient.getArtifacts(0, 20), // Reduced from 100 to 20
-        ]),
-        timeoutPromise
-      ]) as any;
-
-      setData({
-        totalOpportunities: oppsResponse.length,
-        activeOpportunities: oppsResponse.filter((o: any) => o.stage !== 'Closed Lost').length,
-        totalArtifacts: artsResponse.length,
-        publishedArtifacts: artsResponse.filter((a: any) => a.status === 'active').length,
-        mappings: 0,
-        opportunities: oppsResponse,
-        artifacts: artsResponse,
-      });
-    } catch (error) {
-      console.error('Failed to load dashboard data:', error);
-      // Set empty data to stop loading spinner
-      setData({
-        totalOpportunities: 0,
-        activeOpportunities: 0,
-        totalArtifacts: 0,
-        publishedArtifacts: 0,
-        mappings: 0,
-        opportunities: [],
-        artifacts: [],
-      });
+      const [opportunities, artifacts] = await Promise.all([
+        apiClient.getOpportunities(0, 100),
+        apiClient.getArtifacts(0, 100),
+      ]);
+      setData({ opportunities, artifacts });
+    } catch (loadError) {
+      console.error('Failed to load dashboard data:', loadError);
+      setError('Dashboard data could not be loaded. Check your connection and try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading || !data) {
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const metrics = useMemo(() => {
+    const opportunities = data?.opportunities || [];
+    const closedWon = opportunities.filter((opportunity) => opportunity.stage === 'Closed Won').length;
+    const closedLost = opportunities.filter((opportunity) => opportunity.stage === 'Closed Lost').length;
+    const closedCount = closedWon + closedLost;
+    const pipelineValue = opportunities
+      .filter((opportunity) => opportunity.stage !== 'Closed Won' && opportunity.stage !== 'Closed Lost')
+      .reduce((total, opportunity) => total + (Number(opportunity.estimated_value) || 0), 0);
+    const activeCount = opportunities.filter(
+      (opportunity) => opportunity.stage !== 'Closed Won' && opportunity.stage !== 'Closed Lost'
+    ).length;
+    const stageData = stages.map((stage) => ({
+      stage,
+      count: opportunities.filter((opportunity) => opportunity.stage === stage).length,
+    }));
+
+    return {
+      activeCount,
+      closedCount,
+      closedWon,
+      pipelineValue,
+      stageData,
+      winRate: closedCount ? Math.round((closedWon / closedCount) * 100) : null,
+      unassigned: opportunities.filter((opportunity) => !opportunity.assigned_to_id).slice(0, 3),
+    };
+  }, [data]);
+
+  const latestArtifact = data?.artifacts[0];
+  const pipelineLabel = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(metrics.pipelineValue);
+
+  if (loading) {
     return (
-      <div className="space-y-6">
-        {/* KPI Skeleton */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="card h-24 animate-pulse bg-gray-100"></div>
+      <div className="space-y-6" aria-label="Loading dashboard">
+        <div className="h-24 animate-pulse rounded-3xl bg-white" />
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {[...Array(4)].map((_, index) => (
+            <div key={index} className="h-32 animate-pulse rounded-3xl bg-white" />
           ))}
         </div>
-        {/* Chart Skeleton */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {[...Array(2)].map((_, i) => (
-            <div key={i} className="card h-80 animate-pulse bg-gray-100"></div>
-          ))}
+        <div className="grid gap-5 xl:grid-cols-3">
+          <div className="h-80 animate-pulse rounded-3xl bg-white xl:col-span-2" />
+          <div className="h-80 animate-pulse rounded-3xl bg-white" />
         </div>
-        <div className="card h-64 animate-pulse bg-gray-100"></div>
       </div>
     );
   }
 
-  // Prepare chart data
-  const stageData = [
-    { stage: 'Discovery', count: data.opportunities.filter((o: any) => o.stage === 'Discovery').length },
-    { stage: 'Qualification', count: data.opportunities.filter((o: any) => o.stage === 'Qualification').length },
-    { stage: 'Solutioning', count: data.opportunities.filter((o: any) => o.stage === 'Solutioning').length },
-    { stage: 'Proposal', count: data.opportunities.filter((o: any) => o.stage === 'Proposal').length },
-    { stage: 'Negotiation', count: data.opportunities.filter((o: any) => o.stage === 'Negotiation').length },
-    { stage: 'Closed Won', count: data.opportunities.filter((o: any) => o.stage === 'Closed Won').length },
-    { stage: 'Closed Lost', count: data.opportunities.filter((o: any) => o.stage === 'Closed Lost').length },
-  ];
+  if (error || !data) {
+    return (
+      <div className="rounded-3xl border border-red-100 bg-white p-8 text-center shadow-sm">
+        <p className="font-semibold text-red-700">{error || 'Dashboard data is unavailable.'}</p>
+        <button
+          type="button"
+          onClick={loadDashboardData}
+          className="mt-4 inline-flex items-center gap-2 rounded-full bg-presales-dark-green px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+        >
+          <RefreshCw size={16} />
+          Try again
+        </button>
+      </div>
+    );
+  }
 
-  const typeData = Array.from(
-    data.artifacts.reduce((map: Map<string, number>, art: any) => {
-      const count = (map.get(art.artifact_type) || 0) + 1;
-      map.set(art.artifact_type, count);
-      return map;
-    }, new Map())
-  ).map(([name, value]) => ({ name, value }));
-
-  const COLORS = ['#0B5D3B', '#148A58', '#06452D', '#EAF6F0', '#DDE5E1'];
+  const formatValue = (value?: number) => value
+    ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value)
+    : 'Not set';
 
   return (
     <div className="space-y-6">
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-        <KpiCard
-          icon={Target}
-          title="Total Opportunities"
-          value={data.totalOpportunities}
-          color="bg-presales-dark-green"
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <div>
+          <p className="mb-2 text-sm font-semibold uppercase tracking-[0.16em] text-blue-700">Overview</p>
+          <h1 className="text-3xl font-bold tracking-tight text-presales-text sm:text-4xl">
+            Good to see you, {user?.first_name || 'there'}
+          </h1>
+          <p className="mt-2 text-presales-text-secondary">
+            Here&apos;s the latest across your opportunities and presales resources.
+          </p>
+        </div>
+        <Link
+          href="/opportunities"
+          className="inline-flex items-center justify-center gap-2 self-start rounded-full bg-presales-dark-green px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 sm:self-auto"
+        >
+          View opportunities
+          <ArrowRight size={17} />
+        </Link>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          icon={Briefcase}
+          label="Open pipeline"
+          value={pipelineLabel}
+          caption="Open opportunities in your view"
+          tone="blue"
         />
-        <KpiCard
+        <MetricCard
           icon={TrendingUp}
-          title="Active Opportunities"
-          value={data.activeOpportunities}
-          color="bg-presales-medium-green"
+          label="Active opportunities"
+          value={String(metrics.activeCount)}
+          caption="Not yet closed"
+          tone="violet"
         />
-        <KpiCard
+        <MetricCard
+          icon={TrendingUp}
+          label="Win rate"
+          value={metrics.winRate === null ? '—' : `${metrics.winRate}%`}
+          caption={metrics.closedCount ? `${metrics.closedWon} won of ${metrics.closedCount} closed` : 'No closed opportunities yet'}
+          tone="green"
+        />
+        <MetricCard
           icon={Package}
-          title="Total Artifacts"
-          value={data.totalArtifacts}
-          color="bg-presales-dark-green"
-        />
-        <KpiCard
-          icon={Package}
-          title="Published Artifacts"
-          value={data.publishedArtifacts}
-          color="bg-presales-medium-green"
-        />
-        <KpiCard
-          icon={Users}
-          title="Artifact Mappings"
-          value={data.opportunities.reduce((sum: number, o: any) => sum + (o.artifacts?.length || 0), 0)}
-          color="bg-presales-dark-green"
+          label="Published artifacts"
+          value={String(data.artifacts.filter((artifact) => artifact.status === 'active').length)}
+          caption="Active presales resources"
+          tone="amber"
         />
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Opportunities by Stage */}
-        <div className="card">
-          <h3 className="text-lg font-bold text-presales-text mb-4">Opportunities by Stage</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={stageData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#DDE5E1" />
-              <XAxis dataKey="stage" angle={-45} textAnchor="end" height={80} tick={{ fontSize: 12 }} />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="count" fill="#0B5D3B" radius={[8, 8, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+      <div className="grid gap-5 xl:grid-cols-3">
+        <section className="rounded-3xl border border-presales-border bg-white p-5 shadow-sm sm:p-6 xl:col-span-2">
+          <div className="mb-5 flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-bold text-presales-text">Opportunity pipeline</h2>
+              <p className="mt-1 text-sm text-presales-text-secondary">Current opportunities by sales stage</p>
+            </div>
+            <Link href="/opportunities" className="text-sm font-semibold text-blue-700 hover:text-blue-900">
+              View all
+            </Link>
+          </div>
+          <div className="h-[290px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={metrics.stageData} margin={{ top: 8, right: 12, left: -18, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E7EDF6" />
+                <XAxis dataKey="stage" tick={{ fontSize: 11, fill: '#6B7280' }} interval={0} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#6B7280' }} />
+                <Tooltip />
+                <Line
+                  type="monotone"
+                  dataKey="count"
+                  name="Opportunities"
+                  stroke="#2D66E8"
+                  strokeWidth={3}
+                  activeDot={{ r: 6 }}
+                  dot={{ r: 4, fill: '#2D66E8' }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
 
-        {/* Artifacts by Type */}
-        <div className="card">
-          <h3 className="text-lg font-bold text-presales-text mb-4">Artifacts by Type</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={typeData}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ name, value }) => `${name}: ${value}`}
-                outerRadius={80}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {typeData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
+        <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-blue-700 via-blue-600 to-indigo-700 p-6 text-white shadow-sm">
+          <div className="absolute -right-12 -top-12 h-44 w-44 rounded-full border-[28px] border-white/10" />
+          <div className="relative flex h-full min-h-[310px] flex-col">
+            <div className="mb-8 flex items-center justify-between">
+              <div className="rounded-2xl bg-white/15 p-3">
+                <Package size={22} />
+              </div>
+              <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">Knowledge loop</span>
+            </div>
+            <p className="text-sm font-medium text-blue-100">Latest resource</p>
+            <h2 className="mt-2 text-2xl font-bold leading-tight">
+              {latestArtifact?.name || latestArtifact?.title || 'Build your resource library'}
+            </h2>
+            <p className="mt-3 line-clamp-3 text-sm leading-6 text-blue-100">
+              {latestArtifact?.summary || (latestArtifact
+                ? `${latestArtifact.artifact_type || 'Presales resource'} added to the library.`
+                : 'Approved artifacts and reusable knowledge will appear here as they are added.')}
+            </p>
+            <Link href="/artifacts" className="mt-auto inline-flex items-center gap-2 pt-6 text-sm font-semibold hover:text-blue-100">
+              Explore artifacts
+              <ArrowRight size={16} />
+            </Link>
+          </div>
+        </section>
       </div>
 
-      {/* Recent Opportunities */}
-      <div className="card">
-        <h3 className="text-lg font-bold text-presales-text mb-4">Recent Opportunities</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b-2 border-presales-border">
-                <th className="text-left py-3 px-4 font-semibold text-presales-text">Name</th>
-                <th className="text-left py-3 px-4 font-semibold text-presales-text">Customer</th>
-                <th className="text-left py-3 px-4 font-semibold text-presales-text">Stage</th>
-                <th className="text-left py-3 px-4 font-semibold text-presales-text">Value</th>
-                <th className="text-left py-3 px-4 font-semibold text-presales-text">Probability</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.opportunities.slice(0, 5).map((opp: any) => (
-                <tr key={opp.id} className="border-b border-presales-border hover:bg-presales-light-green">
-                  <td className="py-3 px-4 text-presales-text font-medium">{opp.name}</td>
-                  <td className="py-3 px-4 text-presales-text">{opp.customer}</td>
-                  <td className="py-3 px-4">
-                    <span className="px-3 py-1 bg-presales-light-green text-presales-dark-green rounded-full text-sm font-medium">
-                      {opp.stage}
+      <div className="grid gap-5 xl:grid-cols-3">
+        <section className="rounded-3xl border border-presales-border bg-white p-5 shadow-sm sm:p-6">
+          <div className="mb-4">
+            <h2 className="text-lg font-bold text-presales-text">Needs assignment</h2>
+            <p className="mt-1 text-sm text-presales-text-secondary">Opportunities without a solution owner</p>
+          </div>
+          {metrics.unassigned.length ? (
+            <div className="space-y-3">
+              {metrics.unassigned.map((opportunity) => (
+                <Link
+                  key={opportunity.id}
+                  href={`/opportunities/${opportunity.id}`}
+                  className="block rounded-2xl border border-presales-border p-4 transition hover:border-blue-200 hover:bg-blue-50/40"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-presales-text">{opportunity.name}</p>
+                      <p className="mt-1 text-sm text-presales-text-secondary">{opportunity.customer}</p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                      {opportunity.stage}
                     </span>
-                  </td>
-                  <td className="py-3 px-4 text-presales-text">
-                    {opp.estimated_value ? `$${(opp.estimated_value / 1000000).toFixed(1)}M` : '-'}
-                  </td>
-                  <td className="py-3 px-4 text-presales-text">
-                    {opp.probability ? `${(opp.probability * 100).toFixed(0)}%` : '-'}
-                  </td>
-                </tr>
+                  </div>
+                </Link>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl bg-blue-50/70 p-5 text-sm text-presales-text-secondary">
+              No unassigned opportunities in the current view.
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-3xl border border-presales-border bg-white p-5 shadow-sm sm:p-6">
+          <div className="mb-4">
+            <h2 className="text-lg font-bold text-presales-text">Pipeline by stage</h2>
+            <p className="mt-1 text-sm text-presales-text-secondary">Live count from accessible opportunities</p>
+          </div>
+          <div className="h-[255px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={metrics.stageData} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E7EDF6" />
+                <XAxis dataKey="stage" hide />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#6B7280' }} />
+                <Tooltip />
+                <Bar dataKey="count" name="Opportunities" fill="#4C8BF5" radius={[7, 7, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {metrics.stageData.filter((stage) => stage.count > 0).slice(0, 4).map((stage) => (
+              <span key={stage.stage} className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-800">
+                {stage.stage}: {stage.count}
+              </span>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-presales-border bg-white p-5 shadow-sm sm:p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-presales-text">Opportunity details</h2>
+              <p className="mt-1 text-sm text-presales-text-secondary">Recent activity in your pipeline</p>
+            </div>
+            <Briefcase size={20} className="text-blue-600" />
+          </div>
+          {data.opportunities.slice(0, 3).map((opportunity) => (
+            <Link
+              key={opportunity.id}
+              href={`/opportunities/${opportunity.id}`}
+              className="flex items-center justify-between gap-3 border-b border-gray-100 py-3 last:border-0"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-presales-text">{opportunity.name}</p>
+                <p className="mt-1 text-xs text-presales-text-secondary">{opportunity.customer}</p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="text-xs font-semibold text-presales-text">{formatValue(opportunity.estimated_value)}</p>
+                <p className="mt-1 text-xs text-blue-700">{opportunity.probability ? `${Math.round(opportunity.probability * 100)}% probability` : opportunity.stage}</p>
+              </div>
+            </Link>
+          ))}
+          {!data.opportunities.length && (
+            <p className="rounded-2xl bg-blue-50/70 p-5 text-sm text-presales-text-secondary">
+              No opportunities are available in your current view.
+            </p>
+          )}
+        </section>
       </div>
     </div>
   );
 }
 
-interface KpiCardProps {
-  icon: any;
-  title: string;
-  value: number;
-  color: string;
+interface MetricCardProps {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  caption: string;
+  tone: 'blue' | 'violet' | 'green' | 'amber';
 }
 
-function KpiCard({ icon: Icon, title, value, color }: KpiCardProps) {
+function MetricCard({ icon: Icon, label, value, caption, tone }: MetricCardProps) {
+  const tones = {
+    blue: 'bg-blue-50 text-blue-700',
+    violet: 'bg-violet-50 text-violet-700',
+    green: 'bg-emerald-50 text-emerald-700',
+    amber: 'bg-amber-50 text-amber-700',
+  };
+
   return (
-    <div className="card flex items-start gap-4">
-      <div className={`${color} p-3 rounded-lg`}>
-        <Icon size={24} className="text-white" />
+    <div className="rounded-3xl border border-presales-border bg-white p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-presales-text-secondary">{label}</p>
+          <p className="mt-3 text-3xl font-bold tracking-tight text-presales-text">{value}</p>
+        </div>
+        <div className={`rounded-2xl p-3 ${tones[tone]}`}>
+          <Icon size={20} />
+        </div>
       </div>
-      <div>
-        <p className="text-presales-text-secondary text-sm font-medium">{title}</p>
-        <p className="text-3xl font-bold text-presales-text">{value}</p>
-      </div>
+      <p className="mt-3 text-xs text-presales-text-secondary">{caption}</p>
     </div>
   );
 }

@@ -869,14 +869,8 @@ async def get_opportunity_activity_logs(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    await get_opportunity(opp_id, db, current_user)
     opportunity = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
-    if not opportunity:
-        raise HTTPException(status_code=404, detail="Opportunity not found")
-
-    role = db.query(Role).filter(Role.id == current_user.role_id).first()
-    role_name = role.name if role else None
-    if role_name != "Presales Solution Owner" or opportunity.assigned_to_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
 
     logs = db.query(AuditLog).filter(
         AuditLog.opportunity_id == opp_id,

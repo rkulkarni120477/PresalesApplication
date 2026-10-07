@@ -3,15 +3,15 @@
 @tailwind utilities;
 
 :root {
-  --primary-dark-green: #0B5D3B;
-  --deep-green: #06452D;
-  --medium-green: #148A58;
-  --light-green: #EAF6F0;
+  --primary-dark-green: #2D66E8;
+  --deep-green: #1E4FC7;
+  --medium-green: #4C8BF5;
+  --light-green: #EAF2FF;
   --white: #FFFFFF;
-  --page-bg: #F7F9F8;
+  --page-bg: #F4F7FC;
   --text: #1F2937;
-  --text-secondary: #6B7280;
-  --border: #DDE5E1;
+  --text-secondary: #66758D;
+  --border: #DFE7F3;
 }
 
 * {
@@ -27,7 +27,7 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: linear-gradient(135deg, #f7f9f8 0%, #f0f4f2 100%);
+  background: linear-gradient(135deg, #f8faff 0%, #eef4ff 100%);
   color: var(--text);
   line-height: 1.6;
 }
@@ -55,7 +55,7 @@ input, textarea, select {
 input:focus, textarea:focus, select:focus {
   outline: none;
   border-color: var(--primary-dark-green);
-  box-shadow: 0 0 0 3px rgba(11, 93, 59, 0.1);
+  box-shadow: 0 0 0 3px rgba(45, 102, 232, 0.12);
 }
 
 /* Buttons */

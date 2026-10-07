@@ -89,11 +89,11 @@ export default function ReportsPage() {
           <h3 className="text-lg font-bold text-presales-text mb-4">Opportunities by Stage</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={opportunitiesByStage}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#DDE5E1" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#DFE7F3" />
               <XAxis dataKey="stage" />
               <YAxis />
               <Tooltip />
-              <Bar dataKey="count" fill="#0B5D3B" radius={[8, 8, 0, 0]} />
+              <Bar dataKey="count" fill="#2D66E8" radius={[8, 8, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -102,11 +102,11 @@ export default function ReportsPage() {
           <h3 className="text-lg font-bold text-presales-text mb-4">Artifacts by Type</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={artifactsByType}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#DDE5E1" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#DFE7F3" />
               <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} tick={{ fontSize: 12 }} />
               <YAxis />
               <Tooltip />
-              <Bar dataKey="value" fill="#148A58" radius={[8, 8, 0, 0]} />
+              <Bar dataKey="value" fill="#4C8BF5" radius={[8, 8, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
